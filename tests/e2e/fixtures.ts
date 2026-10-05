@@ -3,8 +3,13 @@ import path from 'node:path';
 import { type Servers, startServers } from './servers';
 
 const extPath = path.resolve('.output/chrome-mv3');
+const frameInjectorPath = path.resolve('tests/e2e/extensions/frame-injector');
 
-export const test = base.extend<{ context: BrowserContext; sw: Worker; extensionId: string }, { servers: Servers }>({
+export const test = base.extend<
+  { context: BrowserContext; sw: Worker; extensionId: string; withFrameInjector: boolean },
+  { servers: Servers }
+>({
+  withFrameInjector: [false, { option: true }],
   servers: [
     async ({}, use) => {
       const s = await startServers();
@@ -13,17 +18,19 @@ export const test = base.extend<{ context: BrowserContext; sw: Worker; extension
     },
     { scope: 'worker' },
   ],
-  context: async ({}, use) => {
+  context: async ({ withFrameInjector }, use) => {
+    const exts = withFrameInjector ? `${extPath},${frameInjectorPath}` : extPath;
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
-      args: [`--disable-extensions-except=${extPath}`, `--load-extension=${extPath}`],
+      args: [`--disable-extensions-except=${exts}`, `--load-extension=${exts}`],
     });
     await use(context);
     await context.close();
   },
   sw: async ({ context }, use) => {
-    let [sw] = context.serviceWorkers();
-    if (!sw) sw = await context.waitForEvent('serviceworker');
+    const ours = (w: Worker) => w.url().endsWith('/background.js');
+    let sw = context.serviceWorkers().find(ours);
+    if (!sw) sw = await context.waitForEvent('serviceworker', { predicate: ours });
     await use(sw);
   },
   extensionId: async ({ sw }, use) => {

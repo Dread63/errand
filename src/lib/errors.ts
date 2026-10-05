@@ -9,6 +9,11 @@ export class DetachedError extends Error {
 }
 
 /** The task cannot continue (e.g. all agent tabs were closed). */
+/** Another extension's frame in the page makes Chrome refuse debugger access to the tab. */
+export class ExtensionConflictError extends DetachedError {
+  override name = 'ExtensionConflictError';
+}
+
 export class TaskEndedError extends Error {
   override name = 'TaskEndedError';
 }

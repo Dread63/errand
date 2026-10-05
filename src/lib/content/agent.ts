@@ -1,9 +1,11 @@
+import { FrameGuard } from './guard';
 import { Overlay } from './overlay';
 import type { ContentReply, ContentRequest } from './protocol';
 import { ElementRegistry, focusedElementInfo, readPageText, resolveElement, selectOption, takeSnapshot } from './snapshot';
 
-export function createContentHandler(doc: Document, opts: { moveMs?: number } = {}) {
+export function createContentHandler(doc: Document, opts: { moveMs?: number; ownExtensionId?: string } = {}) {
   const registry = new ElementRegistry();
+  let guard: FrameGuard | null = null;
   let overlay: Overlay | null = null;
   const ov = () => (overlay ??= new Overlay(doc, opts.moveMs ?? 300));
 
@@ -21,6 +23,13 @@ export function createContentHandler(doc: Document, opts: { moveMs?: number } = 
         return readPageText(doc, req.maxChars);
       case 'select':
         return selectOption(registry, req.id, req.value);
+      case 'guard':
+        if (!req.on) {
+          guard?.stop();
+          return [];
+        }
+        guard ??= new FrameGuard(doc, opts.ownExtensionId ?? (globalThis as unknown as { chrome?: typeof chrome }).chrome?.runtime?.id ?? '');
+        return guard.start();
       case 'overlay':
         switch (req.op) {
           case 'active':

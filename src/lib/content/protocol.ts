@@ -7,6 +7,8 @@ export type ContentRequest =
   | { type: 'focused' }
   | { type: 'readText'; maxChars: number }
   | { type: 'select'; id: number; value: string }
+  /** Suspend (on) or restore (off) other extensions' frames, which block the debugger. */
+  | { type: 'guard'; on: boolean }
   | { type: 'overlay'; op: 'active'; on: boolean }
   | { type: 'overlay'; op: 'move'; x: number; y: number }
   | { type: 'overlay'; op: 'click'; x: number; y: number }

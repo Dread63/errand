@@ -24,7 +24,11 @@ function setup(url = 'https://shop.test/') {
     back: async () => void log.push('back'),
     waitForLoad: async () => {},
   };
+  let handler: ((tabId: number) => Promise<void>) | null = null;
   const cdp: CdpLike = {
+    setConflictHandler: (fn) => {
+      handler = fn;
+    },
     ensure: async () => void log.push('cdp.ensure'),
     move: async (_t, x, y) => void log.push(`cdp.move:${x},${y}`),
     click: async (_t, x, y) => void log.push(`cdp.click:${x},${y}`),
@@ -46,6 +50,7 @@ function setup(url = 'https://shop.test/') {
       let detail = '';
       if (req.type === 'overlay' && (req.op === 'move' || req.op === 'click')) detail = `:${req.x},${req.y}`;
       if (req.type === 'overlay' && req.op === 'hover') detail = req.rect ? ':ring' : ':clear';
+      if (req.type === 'guard') detail = req.on ? ':on' : ':off';
       log.push(`content.${req.type}${req.type === 'overlay' ? `.${req.op}` : ''}${detail}`);
       if (req.type === 'snapshot') return snapshot as T;
       if (req.type === 'resolve') return resolveResult as T;
@@ -56,7 +61,7 @@ function setup(url = 'https://shop.test/') {
     },
   };
   const driver = new ChromeDriver(tabs, cdp, content, { isMac: false, settleMs: 0 });
-  return { driver, log, tab, setResolve: (r: ResolveResult) => (resolveResult = r) };
+  return { driver, log, tab, conflictHandler: () => handler, setResolve: (r: ResolveResult) => (resolveResult = r) };
 }
 const call = (name: string, args: Record<string, unknown> = {}): ToolCall => ({ id: 'c', name, args });
 
@@ -74,8 +79,31 @@ describe('ChromeDriver.observe', () => {
     const o = await driver.observe({ mode: 'compact', screenshot: false });
     expect(o.snapshot.elements).toHaveLength(1);
     expect(o.screenshot).toBeUndefined();
-    expect(log).toEqual(['cdp.ensure', 'content.inject', 'content.overlay.active', 'content.snapshot']);
+    // Other extensions' frames are suspended before attaching, since they block the debugger.
+    expect(log).toEqual(['content.inject', 'content.guard:on', 'cdp.ensure', 'content.overlay.active', 'content.snapshot']);
     expect((await driver.observe({ mode: 'compact', screenshot: true })).screenshot).toBe('data:image/jpeg;base64,SHOT');
+  });
+});
+
+describe('ChromeDriver extension conflicts', () => {
+  it('registers a conflict handler that re-suspends foreign frames', async () => {
+    const { log, conflictHandler } = setup();
+    await conflictHandler()!(1);
+    expect(log).toContain('content.guard:on');
+  });
+
+  it('suspends foreign frames before re-attaching on Retry', async () => {
+    const { driver, log } = setup();
+    await driver.reattach();
+    expect(log.filter((l) => l === 'content.guard:on' || l === 'cdp.ensure')).toEqual(['content.guard:on', 'cdp.ensure']);
+  });
+
+  it('restores suspended frames when the task stops', async () => {
+    const { driver, log } = setup();
+    await driver.observe({ mode: 'compact', screenshot: false });
+    log.length = 0;
+    await driver.stop();
+    expect(log).toContain('content.guard:off');
   });
 });
 

@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Frame Injector (test fixture)",
+  "description": "Mimics password managers and similar extensions that keep a hidden iframe in every page.",
+  "version": "1",
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["inject.js"], "run_at": "document_idle" }],
+  "web_accessible_resources": [{ "resources": ["frame.html"], "matches": ["<all_urls>"] }]
+}

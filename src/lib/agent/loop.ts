@@ -45,7 +45,7 @@ async function guarded<T>(d: AgentDeps, fn: () => Promise<T>): Promise<T> {
       return await fn();
     } catch (e) {
       if (!(e instanceof DetachedError)) throw e;
-      const again = await d.gate.retry(`${e.message} Close DevTools for this tab if it is open, then press Retry.`);
+      const again = await d.gate.retry(`${e.message} Press Retry to try again.`);
       if (!again) throw new StopTask('Stopped: the agent lost control of the tab.');
       await d.driver.reattach().catch(() => {});
     }

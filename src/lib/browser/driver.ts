@@ -10,7 +10,7 @@ import type { ContentMessenger } from './messenger';
 import type { AgentTabs } from './tabs';
 
 export type TabsLike = Pick<AgentTabs, 'start' | 'stop' | 'active' | 'list' | 'open' | 'switchTo' | 'close' | 'navigate' | 'back' | 'waitForLoad'>;
-export type CdpLike = Pick<Cdp, 'ensure' | 'move' | 'click' | 'wheel' | 'insertText' | 'key' | 'screenshot' | 'detachAll' | 'clearCanceled' | 'dispose'>;
+export type CdpLike = Pick<Cdp, 'setConflictHandler' | 'ensure' | 'move' | 'click' | 'wheel' | 'insertText' | 'key' | 'screenshot' | 'detachAll' | 'clearCanceled' | 'dispose'>;
 export type MessengerLike = Pick<ContentMessenger, 'ensureInjected' | 'send'>;
 
 const ELEMENT_TOOLS = new Set(['click', 'type', 'select', 'hover']);
@@ -20,6 +20,7 @@ const label = (t: ActionTarget) => (t.element ? `${t.element.role} "${clip(t.ele
 export class ChromeDriver implements BrowserDriver {
   private viewport = { w: 1280, h: 800 };
   private ringShown = false;
+  private guardedTabs = new Set<number>();
   private scrollStepMs: number;
   private isMac: boolean;
   private settleMs: number;
@@ -33,6 +34,7 @@ export class ChromeDriver implements BrowserDriver {
     this.isMac = opts.isMac ?? /Mac/.test(globalThis.navigator?.userAgent ?? '');
     this.settleMs = opts.settleMs ?? 300;
     this.scrollStepMs = opts.scrollStepMs ?? 30;
+    this.cdp.setConflictHandler((tabId) => this.suspendForeignFrames(tabId));
   }
 
   async start(tabId: number): Promise<void> {
@@ -46,6 +48,8 @@ export class ChromeDriver implements BrowserDriver {
     } catch {
       // tab gone or page unreachable
     }
+    for (const tabId of this.guardedTabs) await this.content.send(tabId, { type: 'guard', on: false }).catch(() => {});
+    this.guardedTabs.clear();
     await this.cdp.detachAll();
     this.cdp.dispose();
     this.tabs.stop();
@@ -54,6 +58,7 @@ export class ChromeDriver implements BrowserDriver {
   async reattach(): Promise<void> {
     this.cdp.clearCanceled();
     const t = await this.tabs.active();
+    if (isWebUrl(t.url ?? '')) await this.suspendForeignFrames(t.id!);
     await this.cdp.ensure(t.id!);
   }
 
@@ -86,8 +91,9 @@ export class ChromeDriver implements BrowserDriver {
       };
       return { snapshot, tabs };
     }
-    await this.cdp.ensure(tabId);
     await this.content.ensureInjected(tabId);
+    await this.suspendForeignFrames(tabId);
+    await this.cdp.ensure(tabId);
     await this.content.send(tabId, { type: 'overlay', op: 'active', on: true });
     const snapshot = await this.content.send<PageSnapshot>(tabId, { type: 'snapshot', mode });
     this.viewport = snapshot.viewport;
@@ -131,6 +137,12 @@ export class ChromeDriver implements BrowserDriver {
 
   private async overlay(tabId: number, req: ContentRequest): Promise<void> {
     await this.content.send(tabId, req).catch(() => {}); // visuals are best-effort
+  }
+
+  /** Chrome refuses debugger access while another extension's frame is in the page. */
+  private async suspendForeignFrames(tabId: number): Promise<void> {
+    this.guardedTabs.add(tabId);
+    await this.content.send(tabId, { type: 'guard', on: true }).catch(() => {});
   }
 
   private async pointTo(t: ActionTarget): Promise<{ x: number; y: number }> {
