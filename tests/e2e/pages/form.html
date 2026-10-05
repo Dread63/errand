@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head><title>Form</title></head>
+  <body>
+    <form id="f">
+      <label>Name <input name="name" /></label>
+      <button type="submit">Save</button>
+    </form>
+    <p id="out"></p>
+    <script>
+      document.getElementById('f').addEventListener('submit', (e) => {
+        e.preventDefault();
+        document.getElementById('out').textContent = 'Saved: ' + new FormData(e.target).get('name');
+      });
+    </script>
+  </body>
+</html>
