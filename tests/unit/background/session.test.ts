@@ -8,6 +8,7 @@ import { SettingsStore } from '@/lib/storage/settings';
 import { SitePermissionStore } from '@/lib/storage/sites';
 import { FakeDriver, FakeLlm, testProfile, toolCall } from '../agent/fakes';
 import type { ChatResult } from '@/lib/llm/types';
+import type { Profile } from '@/lib/types';
 
 class FakeHandle extends FakeDriver implements DriverHandle {
   started: number | null = null;
@@ -28,13 +29,13 @@ async function until(fn: () => boolean, timeoutMs = 1000) {
   }
 }
 
-async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boolean; noProfile?: boolean } = {}) {
+async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boolean; noProfile?: boolean; profile?: Partial<Profile> } = {}) {
   const kv = memoryKV();
   const profiles = new ProfileStore(kv);
   const settings = new SettingsStore(kv);
   const siteStore = new SitePermissionStore(kv);
   const history = new HistoryStore(kv);
-  if (!opts.noProfile) await profiles.save({ ...testProfile, supportsVision: !!opts.vision });
+  if (!opts.noProfile) await profiles.save({ ...testProfile, supportsVision: !!opts.vision, ...opts.profile });
   await settings.update({ activeProfileId: opts.noProfile ? null : testProfile.id });
   if (opts.allow) await siteStore.allow('https://shop.test');
   const posted: BgToPanel[] = [];
@@ -51,6 +52,20 @@ async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boo
 const start = { type: 'start' as const, conversationId: null, text: 'Click it', attachments: [], tabId: 42 };
 
 describe('PanelSession', () => {
+
+  it('resolves vision per model: a vision model on a non-vision profile gets coordinates and images', async () => {
+    const s = await setup([toolCall('done', { summary: 'ok' })], { allow: true, profile: { visionModels: ['m'] } });
+    await s.session.handle({ ...start, attachments: [{ name: 'a.png', kind: 'image', dataUrl: 'data:image/png;base64,AA==' }] });
+    expect(s.posted.find((m) => m.type === 'error')).toBeUndefined();
+    const click = (s.llm.requests[0].tools as unknown as Array<{ function: { name: string; parameters: { properties: object } } }>).find((t) => t.function.name === 'click')!;
+    expect(click.function.parameters.properties).toHaveProperty('x');
+  });
+
+  it('rejects images when the selected model is not in the vision list', async () => {
+    const s = await setup([], { allow: true, vision: true, profile: { visionModels: ['other'] } });
+    await s.session.handle({ ...start, attachments: [{ name: 'a.png', kind: 'image', dataUrl: 'data:image/png;base64,AA==' }] });
+    expect(s.posted[0]).toMatchObject({ type: 'error', message: expect.stringMatching(/does not support images/) });
+  });
   it('runs a task end to end, streams state and saves history', async () => {
     const s = await setup([toolCall('click', { id: 1 }), toolCall('done', { summary: 'Clicked.' })], { allow: true });
     await s.session.handle(start);
@@ -110,7 +125,7 @@ describe('PanelSession', () => {
   it('refuses to start without a profile', async () => {
     const s = await setup([], { noProfile: true });
     await s.session.handle(start);
-    expect(s.posted).toEqual([{ type: 'error', message: expect.stringMatching(/No model profile selected/) }]);
+    expect(s.posted).toEqual([{ type: 'error', message: expect.stringMatching(/No model selected/) }]);
   });
 
   it('rejects image attachments for profiles without vision', async () => {

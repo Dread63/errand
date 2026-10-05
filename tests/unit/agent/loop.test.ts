@@ -7,6 +7,26 @@ import { el, last, setup, task, textReply, toolCall } from './fakes';
 const steps = (turns: Awaited<ReturnType<typeof runAgent>>) => turns.filter((t): t is StepTurn => t.kind === 'step');
 
 describe('runAgent', () => {
+
+  it('records step timing and the thinking streamed for that step', async () => {
+    const s = setup([{ ...toolCall('click', { id: 1 }), thinking: 'I should click the button.' }, toolCall('done', { summary: 'ok' })]);
+    let t = 1000;
+    s.deps.now = () => (t += 100);
+    const turns = await runAgent(task, s.deps);
+    const [click, done] = steps(turns);
+    expect(click.thinking).toBe('I should click the button.');
+    expect(click.thinkingMs).toBeGreaterThan(0);
+    expect(click.startedAt).toBeLessThan(click.endedAt!);
+    expect(done.thinking).toBeUndefined();
+    expect(done.startedAt).toBeGreaterThanOrEqual(click.endedAt!);
+  });
+
+  it('truncates very long thinking', async () => {
+    const s = setup([{ ...toolCall('done', { summary: 'ok' }), thinking: 'x'.repeat(5000) }]);
+    const [done] = steps(await runAgent(task, s.deps));
+    expect(done.thinking!.length).toBeLessThanOrEqual(4001);
+    expect(done.thinking!.startsWith('…')).toBe(true);
+  });
   it('performs a click then finishes with the done summary', async () => {
     const s = setup([toolCall('click', { id: 1 }, 'Clicking the button'), toolCall('done', { summary: 'All done' })]);
     const turns = await runAgent(task, s.deps);

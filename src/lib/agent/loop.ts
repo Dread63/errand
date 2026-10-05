@@ -25,6 +25,16 @@ export interface AgentDeps {
   newId?: () => string;
   /** Passed to the model as a stable per-conversation session id. */
   sessionId?: string;
+  /** Clock for step timestamps; defaults to Date.now. */
+  now?: () => number;
+}
+
+const MAX_THINKING = 4000;
+
+interface ModelReply {
+  result: ChatResult;
+  thinking: string;
+  thinkingMs: number;
 }
 
 /** Ends the task with a message for the user. */
@@ -91,17 +101,32 @@ async function observe(d: AgentDeps): Promise<ObservationRecord> {
   return record;
 }
 
-async function callModel(d: AgentDeps, messages: ChatMessage[]): Promise<ChatResult> {
+async function callModel(d: AgentDeps, messages: ChatMessage[], now: () => number): Promise<ModelReply> {
   for (;;) {
+    let thinking = '';
+    let firstAt = 0;
+    let lastAt = 0;
     try {
-      return await d.llm.chat({
+      const result = await d.llm.chat({
         messages,
         tools: toolSchemas(d.profile.supportsVision),
         signal: d.signal,
         onDelta: (t) => d.hooks.onDelta(t),
-        onReasoning: (t) => d.hooks.onReasoning?.(t),
+        onReasoning: (t) => {
+          const at = now();
+          if (!thinking) firstAt = at;
+          lastAt = at;
+          thinking += t;
+          d.hooks.onReasoning?.(t);
+        },
         ...(d.sessionId ? { sessionId: d.sessionId } : {}),
       });
+      const trimmed = thinking.trim();
+      return {
+        result,
+        thinking: trimmed.length > MAX_THINKING ? `…${trimmed.slice(-MAX_THINKING)}` : trimmed,
+        thinkingMs: trimmed ? Math.max(1, lastAt - firstAt) : 0,
+      };
     } catch (e) {
       if (d.signal.aborted) throw e;
       const msg = errMsg(e);
@@ -148,10 +173,12 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn): Promise<string
 export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
   const turns = [...initial];
   const push = (t: Turn) => {
+    if (t.kind === 'step' && t.endedAt === undefined) t.endedAt = now();
     turns.push(t);
     d.hooks.onTurns([...turns]);
   };
   const newId = d.newId ?? (() => crypto.randomUUID());
+  const now = d.now ?? Date.now;
   const limit = d.settings.stepLimit;
   let malformed = 0;
   let calibration = 1;
@@ -164,11 +191,13 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
     for (let n = 0; n < limit; n++) {
       if (d.signal.aborted) throw new StopTask('Stopped.');
       const stepStart = performance.now();
+      const startedAt = now();
       const observation = await timed(`step ${n + 1}: observe (total)`, () => guarded(d, () => observe(d)));
       const messages = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
       if (nudge) messages.push(...nudge);
       nudge = null;
-      const result = await timed(`step ${n + 1}: model (total, ~${estimateTokens(messages)} prompt tokens est.)`, () => callModel(d, messages));
+      const reply = await timed(`step ${n + 1}: model (total, ~${estimateTokens(messages)} prompt tokens est.)`, () => callModel(d, messages, now));
+      const result = reply.result;
       logTiming(`step ${n + 1}: until model reply`, performance.now() - stepStart);
       if (result.usage?.promptTokens) {
         calibration = Math.min(3, Math.max(0.5, result.usage.promptTokens / estimateTokens(messages)));
@@ -202,6 +231,8 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
         result: '',
         risky: false,
         observation,
+        startedAt,
+        ...(reply.thinking ? { thinking: reply.thinking, thinkingMs: reply.thinkingMs } : {}),
       };
 
       let call: ToolCall;
