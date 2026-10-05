@@ -91,7 +91,7 @@ describe('takeSnapshot', () => {
     expect(byName(full, 'Buy')?.context).toBe('Price $5 Buy');
   });
 
-  it('Review Focus: keeps ids stable and never reuses them', () => {
+  it('Review Focus: keeps ids stable and never reuses them', async () => {
     document.body.innerHTML = `<button id="a">A</button><button id="b">B</button>`;
     const reg = new ElementRegistry();
     const first = snap('compact', reg);
@@ -102,7 +102,7 @@ describe('takeSnapshot', () => {
     const second = snap('compact', reg);
     expect(byName(second, 'B')!.id).toBe(idB);
     expect(byName(second, 'C')!.id).not.toBe(idA);
-    expect(resolveElement(reg, idA, false)).toEqual({
+    expect(await resolveElement(reg, idA, false)).toEqual({
       ok: false,
       error: `Element [${idA}] no longer exists on the page. Use an id from the latest page state.`,
     });
@@ -110,12 +110,29 @@ describe('takeSnapshot', () => {
 });
 
 describe('resolveElement', () => {
-  it('returns the element center', () => {
+  let scrolls: ScrollIntoViewOptions[] = [];
+  beforeEach(() => {
+    scrolls = [];
+    Element.prototype.scrollIntoView = function (opts?: boolean | ScrollIntoViewOptions) {
+      scrolls.push(opts as ScrollIntoViewOptions);
+      this.removeAttribute('data-below'); // now in view
+    };
+  });
+
+  it('returns the element center without scrolling when it is already in view', async () => {
     document.body.innerHTML = `<button>Go</button>`;
     const reg = new ElementRegistry();
     const id = snap('compact', reg).elements[0].id;
-    const r = resolveElement(reg, id, true);
-    expect(r).toMatchObject({ ok: true, x: 60, y: 35 });
+    expect(await resolveElement(reg, id, true)).toMatchObject({ ok: true, x: 60, y: 35 });
+    expect(scrolls).toEqual([]);
+  });
+
+  it('smooth-scrolls off-screen elements into view, then measures them', async () => {
+    document.body.innerHTML = `<button data-below>Far</button>`;
+    const reg = new ElementRegistry();
+    const id = snap('full', reg).elements[0].id;
+    expect(await resolveElement(reg, id, true)).toMatchObject({ ok: true, x: 60, y: 35 });
+    expect(scrolls).toEqual([{ behavior: 'smooth', block: 'center', inline: 'center' }]);
   });
 });
 

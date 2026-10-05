@@ -44,6 +44,7 @@ export class Overlay {
     private doc: Document,
     private moveMs = 300,
   ) {
+    doc.querySelectorAll(`#${OVERLAY_HOST_ID}`).forEach((stale) => stale.remove()); // from a reloaded extension
     this.host = doc.createElement('div');
     this.host.id = OVERLAY_HOST_ID;
     this.root = this.host.attachShadow({ mode: 'closed' });

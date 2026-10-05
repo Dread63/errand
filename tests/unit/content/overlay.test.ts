@@ -41,6 +41,15 @@ describe('Overlay', () => {
     expect(document.getElementById(OVERLAY_HOST_ID)).not.toBeNull();
   });
 
+  it('replaces a stale overlay left behind by a previous extension version', () => {
+    const stale = document.createElement('div');
+    stale.id = OVERLAY_HOST_ID;
+    document.documentElement.appendChild(stale);
+    new Overlay(document, 0);
+    expect(document.querySelectorAll(`#${OVERLAY_HOST_ID}`)).toHaveLength(1);
+    expect(stale.isConnected).toBe(false);
+  });
+
   it('adds a click ripple', () => {
     const o = new Overlay(document, 0);
     o.click(5, 5);

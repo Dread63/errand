@@ -19,6 +19,8 @@ const label = (t: ActionTarget) => (t.element ? `${t.element.role} "${clip(t.ele
 
 export class ChromeDriver implements BrowserDriver {
   private viewport = { w: 1280, h: 800 };
+  private ringShown = false;
+  private scrollStepMs: number;
   private isMac: boolean;
   private settleMs: number;
 
@@ -26,10 +28,11 @@ export class ChromeDriver implements BrowserDriver {
     private tabs: TabsLike,
     private cdp: CdpLike,
     private content: MessengerLike,
-    opts: { isMac?: boolean; settleMs?: number } = {},
+    opts: { isMac?: boolean; settleMs?: number; scrollStepMs?: number } = {},
   ) {
     this.isMac = opts.isMac ?? /Mac/.test(globalThis.navigator?.userAgent ?? '');
     this.settleMs = opts.settleMs ?? 300;
+    this.scrollStepMs = opts.scrollStepMs ?? 30;
   }
 
   async start(tabId: number): Promise<void> {
@@ -134,7 +137,17 @@ export class ChromeDriver implements BrowserDriver {
     if (!t.point) throw new ToolError('This action needs an element id.');
     await this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y });
     await this.overlay(t.tabId, { type: 'overlay', op: 'hover', rect: t.element?.rect ?? null });
+    this.ringShown = true;
     return t.point;
+  }
+
+  /** Wheel-scrolls in small steps so the page scrolls smoothly instead of jumping. */
+  private async smoothWheel(tabId: number, x: number, y: number, deltaY: number): Promise<void> {
+    const steps = 8;
+    for (let i = 0; i < steps; i++) {
+      await this.cdp.wheel(tabId, x, y, deltaY / steps);
+      await sleep(this.scrollStepMs);
+    }
   }
 
   private async settle(tabId: number): Promise<void> {
@@ -143,6 +156,17 @@ export class ChromeDriver implements BrowserDriver {
   }
 
   async perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
+    this.ringShown = false;
+    try {
+      return await this.act(call, target, mode);
+    } finally {
+      // The ring marks the element being acted on; once the action is over it must not linger
+      // (it is fixed-position, so it would also drift away from the element as the page scrolls).
+      if (this.ringShown && call.name !== 'hover') await this.overlay(target.tabId, { type: 'overlay', op: 'hover', rect: null });
+    }
+  }
+
+  private async act(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
     const tabId = target.tabId;
     const a = call.args;
     switch (call.name) {
@@ -181,14 +205,23 @@ export class ChromeDriver implements BrowserDriver {
         const x = Math.round(this.viewport.w / 2);
         const y = Math.round(this.viewport.h / 2);
         await this.overlay(tabId, { type: 'overlay', op: 'move', x, y });
-        await this.cdp.wheel(tabId, x, y, (a.direction === 'up' ? -1 : 1) * Math.round(this.viewport.h * 0.8));
+        await this.smoothWheel(tabId, x, y, (a.direction === 'up' ? -1 : 1) * Math.round(this.viewport.h * 0.8));
         await sleep(this.settleMs);
         return `Scrolled ${a.direction}.`;
       }
-      case 'key':
+      case 'key': {
+        const r = target.element?.rect;
+        if (r) await this.pointTo({ ...target, point: { x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) } });
         await this.cdp.key(tabId, String(a.combo));
         await this.settle(tabId);
+        // Keys like Tab move focus; let the cursor follow so keyboard navigation is visible.
+        const focused = await this.content.send<ElementInfo | null>(tabId, { type: 'focused' }).catch(() => null);
+        if (focused) {
+          const fr = focused.rect;
+          await this.overlay(tabId, { type: 'overlay', op: 'move', x: Math.round(fr.x + fr.w / 2), y: Math.round(fr.y + fr.h / 2) });
+        }
         return `Pressed ${a.combo}.`;
+      }
       case 'navigate':
         await this.tabs.navigate(String(a.url));
         return `Navigated to ${a.url}.`;

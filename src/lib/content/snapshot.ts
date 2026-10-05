@@ -248,11 +248,31 @@ export function takeSnapshot(doc: Document, reg: ElementRegistry, mode: ContextM
   };
 }
 
-export function resolveElement(reg: ElementRegistry, id: number, scroll: boolean): ResolveResult {
+function inViewport(el: Element, rect: Rect): boolean {
+  const top = el.ownerDocument.defaultView?.top ?? el.ownerDocument.defaultView;
+  const w = top?.innerWidth ?? 0;
+  const h = top?.innerHeight ?? 0;
+  return rect.x >= 0 && rect.y >= 0 && rect.x + rect.w <= w && rect.y + rect.h <= h;
+}
+
+/** Waits until the element stops moving (a smooth scroll has finished), up to maxMs. */
+async function waitForStableRect(el: Element, maxMs = 1000, pollMs = 50): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  let prev = rectOf(el);
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    const next = rectOf(el);
+    if (next.x === prev.x && next.y === prev.y) return;
+    prev = next;
+  }
+}
+
+export async function resolveElement(reg: ElementRegistry, id: number, scroll: boolean): Promise<ResolveResult> {
   const el = reg.get(id);
   if (!el) return { ok: false, error: `Element [${id}] no longer exists on the page. Use an id from the latest page state.` };
-  if (scroll && typeof (el as HTMLElement).scrollIntoView === 'function') {
-    (el as HTMLElement).scrollIntoView({ block: 'center', inline: 'center' });
+  if (scroll && !inViewport(el, rectOf(el)) && typeof (el as HTMLElement).scrollIntoView === 'function') {
+    (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    await waitForStableRect(el);
   }
   const rect = rectOf(el);
   if (rect.w <= 0 || rect.h <= 0) return { ok: false, error: `Element [${id}] is not visible right now.` };

@@ -43,7 +43,10 @@ function setup(url = 'https://shop.test/') {
   const content: MessengerLike = {
     ensureInjected: async () => void log.push('content.inject'),
     send: async <T,>(_t: number, req: ContentRequest): Promise<T> => {
-      log.push(`content.${req.type}${req.type === 'overlay' ? `.${req.op}` : ''}`);
+      let detail = '';
+      if (req.type === 'overlay' && (req.op === 'move' || req.op === 'click')) detail = `:${req.x},${req.y}`;
+      if (req.type === 'overlay' && req.op === 'hover') detail = req.rect ? ':ring' : ':clear';
+      log.push(`content.${req.type}${req.type === 'overlay' ? `.${req.op}` : ''}${detail}`);
       if (req.type === 'snapshot') return snapshot as T;
       if (req.type === 'resolve') return resolveResult as T;
       if (req.type === 'readText') return 'PAGE TEXT' as T;
@@ -103,7 +106,13 @@ describe('ChromeDriver.perform', () => {
     const t = await driver.target(call('click', { id: 4 }));
     log.length = 0;
     expect(await driver.perform(call('click', { id: 4 }), t, 'compact')).toBe('Clicked button "Go".');
-    expect(log).toEqual(['content.overlay.move', 'content.overlay.hover', 'cdp.click:60,35', 'content.overlay.click']);
+    expect(log).toEqual([
+      'content.overlay.move:60,35',
+      'content.overlay.hover:ring',
+      'cdp.click:60,35',
+      'content.overlay.click:60,35',
+      'content.overlay.hover:clear',
+    ]);
   });
 
   it('types by focusing, clearing, inserting and optionally pressing Enter', async () => {
@@ -120,13 +129,42 @@ describe('ChromeDriver.perform', () => {
     ]);
   });
 
+  it('clears the hover ring after typing so it does not stay stuck on the page', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('type', { id: 4 }));
+    log.length = 0;
+    await driver.perform(call('type', { id: 4, text: 'x' }), t, 'compact');
+    expect(log.at(-1)).toBe('content.overlay.hover:clear');
+  });
+
+  it('moves the cursor to the focused element before pressing a key', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('key', { combo: 'Tab' }));
+    log.length = 0;
+    await driver.perform(call('key', { combo: 'Tab' }), t, 'compact');
+    expect(log.indexOf('content.overlay.move:60,35')).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf('content.overlay.move:60,35')).toBeLessThan(log.indexOf('cdp.key:Tab'));
+    expect(log.at(-1)).toBe('content.overlay.hover:clear');
+  });
+
+  it('follows focus with the cursor after a key press (e.g. Tab)', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('key', { combo: 'Tab' }));
+    log.length = 0;
+    await driver.perform(call('key', { combo: 'Tab' }), t, 'compact');
+    const afterKey = log.slice(log.indexOf('cdp.key:Tab') + 1);
+    expect(afterKey).toEqual(['content.focused', 'content.overlay.move:60,35', 'content.overlay.hover:clear']);
+  });
+
   it('scrolls the page with a wheel event at the viewport center', async () => {
     const { driver, log } = setup();
     await driver.observe({ mode: 'compact', screenshot: false });
     const t = await driver.target(call('scroll', { direction: 'down' }));
     log.length = 0;
     await driver.perform(call('scroll', { direction: 'down' }), t, 'compact');
-    expect(log).toContain('cdp.wheel:500,400,640');
+    expect(log).toContain('content.overlay.move:500,400');
+    // Smooth: the 640px scroll is split into 8 small wheel steps instead of one jump.
+    expect(log.filter((l) => l.startsWith('cdp.wheel'))).toEqual(Array(8).fill('cdp.wheel:500,400,80'));
   });
 
   it('wraps read_text as untrusted page content', async () => {
