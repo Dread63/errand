@@ -75,3 +75,34 @@ test('files dropped anywhere on the panel are attached', async ({ context, sw, e
   await expect(panel.getByRole('button', { name: 'Remove notes.txt' })).toBeVisible();
   await expect(panel.locator('.dropzone')).toHaveCount(0);
 });
+
+test('Add provider offers presets that pre-fill the form', async ({ context, extensionId }) => {
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options.html`);
+
+  await expect(options.getByText('Add your first provider')).toBeVisible();
+  await options.getByRole('button', { name: 'Add provider' }).click();
+  await options.getByRole('button', { name: 'Ollama (local)' }).click();
+
+  await expect(options.getByLabel('Base URL')).toHaveValue('http://localhost:11434/v1');
+  await expect(options.getByLabel('Name')).toHaveValue('Ollama (local)');
+  await expect(options.getByText('OLLAMA_ORIGINS=chrome-extension://*')).toBeVisible();
+});
+
+test('fresh install asks to connect a model, then gets out of the way', async ({ context, sw, extensionId, servers }) => {
+  const page = await context.newPage();
+  await page.goto(`${servers.siteUrl}/form.html`);
+  const panel = await openPanel(context, sw, extensionId, await tabIdFor(sw, page.url()));
+
+  await expect(panel.getByText('Connect a model to get started')).toBeVisible();
+  await panel.getByTestId('composer-input').fill('Do something');
+  await expect(panel.getByTestId('composer-send')).toBeDisabled();
+
+  const optionsPage = context.waitForEvent('page', (p) => p.url().includes('options.html'));
+  await panel.getByRole('button', { name: 'Open Settings' }).click();
+  await optionsPage;
+
+  await configure(sw, servers.llmUrl, [servers.siteUrl]);
+  await expect(panel.getByText('What should I do in this tab?')).toBeVisible();
+  await expect(panel.getByText('Connect a model to get started')).toHaveCount(0);
+});

@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
+import { logoSvg } from './logo';
 
 type P = { size?: number };
 
@@ -28,3 +29,9 @@ export const IconRefresh = (p: P) => svg(<><path d="M21 12a9 9 0 1 1-3-6.7L21 8"
 export const IconSparkle = (p: P) => svg(<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />, p);
 export const IconSpinner = (p: P) => svg(<path d="M21 12a9 9 0 1 1-6.2-8.6" className="spin" />, p);
 export const IconBack = (p: P) => svg(<path d="m15 18-6-6 6-6" />, p);
+
+/** The Errand mark. The markup is generated locally by logoSvg, never from outside input. */
+export function Logo({ size }: { size: number }) {
+  const id = useId().replace(/:/g, '');
+  return <span className="brand-logo" style={{ display: 'inline-flex', width: size, height: size }} dangerouslySetInnerHTML={{ __html: logoSvg({ size, small: size <= 32, safe: 120, id }) }} />;
+}

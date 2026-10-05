@@ -1,32 +1,8 @@
 import type { Profile } from '../types';
 import type { KV } from './kv';
+import type { SettingsStore } from './settings';
 
 const KEY = 'profiles';
-
-export const DEFAULT_PROFILES: Profile[] = [
-  {
-    id: 'macbook',
-    name: 'MacBook (Tailscale)',
-    baseUrl: 'http://macbook.your-tailnet.ts.net:8000/v1',
-    apiKey: '',
-    model: 'qwen3.6-35b-a3b',
-    supportsVision: false,
-    contextMode: 'compact',
-    contextWindow: 32768,
-    maxScreenshots: 1,
-  },
-  {
-    id: 'opencode-go',
-    name: 'OpenCode Go',
-    baseUrl: 'https://opencode.ai/zen/go/v1',
-    apiKey: '',
-    model: 'glm-5.3-flash',
-    supportsVision: false,
-    contextMode: 'full',
-    contextWindow: 1_000_000,
-    maxScreenshots: 3,
-  },
-];
 
 export class ProfileStore {
   constructor(private kv: KV) {}
@@ -50,8 +26,17 @@ export class ProfileStore {
   async remove(id: string): Promise<void> {
     await this.kv.set(KEY, (await this.list()).filter((p) => p.id !== id));
   }
+}
 
-  async seedDefaults(): Promise<void> {
-    if ((await this.kv.get(KEY)) === undefined) await this.kv.set(KEY, DEFAULT_PROFILES);
-  }
+/** Saves a profile, making it active when no stored profile is active (e.g. the first one added). */
+export async function saveProfile(profiles: ProfileStore, settings: SettingsStore, p: Profile): Promise<void> {
+  await profiles.save(p);
+  const { activeProfileId } = await settings.get();
+  if (!activeProfileId || !(await profiles.get(activeProfileId))) await settings.update({ activeProfileId: p.id });
+}
+
+/** Removes a profile; if it was active, the first remaining profile (or none) becomes active. */
+export async function removeProfile(profiles: ProfileStore, settings: SettingsStore, id: string): Promise<void> {
+  await profiles.remove(id);
+  if ((await settings.get()).activeProfileId === id) await settings.update({ activeProfileId: (await profiles.list())[0]?.id ?? null });
 }

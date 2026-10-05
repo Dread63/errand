@@ -60,7 +60,7 @@ export function App() {
         />
       ) : (
         <>
-          <ChatView turns={state.turns} streaming={state.streaming} reasoning={state.reasoning} running={state.running} />
+          <ChatView turns={state.turns} streaming={state.streaming} reasoning={state.reasoning} running={state.running} connected={profiles.length > 0} />
           {state.gates.length > 0 && (
             <div className="gates">
               {state.gates.map((g) => (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { memoryKV } from '@/lib/storage/kv';
-import { DEFAULT_PROFILES, ProfileStore } from '@/lib/storage/profiles';
+import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
 import { DEFAULT_RISKY_KEYWORDS, DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
 import { SitePermissionStore } from '@/lib/storage/sites';
 import { HistoryStore } from '@/lib/storage/history';
@@ -29,18 +29,48 @@ describe('ProfileStore', () => {
     expect(await s.get('a')).toBeUndefined();
   });
 
-  it('seeds defaults only once', async () => {
-    const s = new ProfileStore(memoryKV());
-    await s.seedDefaults();
-    expect(await s.list()).toEqual(DEFAULT_PROFILES);
-    await s.remove('macbook');
-    await s.seedDefaults();
-    expect((await s.list()).map((p) => p.id)).toEqual(['opencode-go']);
+  it('has no default profiles to seed', async () => {
+    expect(await new ProfileStore(memoryKV()).list()).toEqual([]);
+    expect(DEFAULT_SETTINGS.activeProfileId).toBeNull();
+  });
+});
+
+describe('saveProfile / removeProfile', () => {
+  const stores = () => {
+    const kv = memoryKV();
+    return { profiles: new ProfileStore(kv), settings: new SettingsStore(kv) };
+  };
+
+  it('makes the first saved profile active', async () => {
+    const { profiles, settings } = stores();
+    await saveProfile(profiles, settings, profile('a'));
+    expect((await settings.get()).activeProfileId).toBe('a');
   });
 
-  it('defaults: MacBook is compact, OpenCode Go is full', () => {
-    expect(DEFAULT_PROFILES.find((p) => p.id === 'macbook')?.contextMode).toBe('compact');
-    expect(DEFAULT_PROFILES.find((p) => p.id === 'opencode-go')?.contextMode).toBe('full');
+  it('replaces an active id that points at no stored profile', async () => {
+    const { profiles, settings } = stores();
+    await settings.update({ activeProfileId: 'macbook' });
+    await saveProfile(profiles, settings, profile('a'));
+    expect((await settings.get()).activeProfileId).toBe('a');
+  });
+
+  it('keeps an existing active profile when another is saved', async () => {
+    const { profiles, settings } = stores();
+    await saveProfile(profiles, settings, profile('a'));
+    await saveProfile(profiles, settings, profile('b'));
+    expect((await settings.get()).activeProfileId).toBe('a');
+  });
+
+  it('falls back to the first remaining profile when the active one is removed', async () => {
+    const { profiles, settings } = stores();
+    for (const id of ['a', 'b', 'c']) await saveProfile(profiles, settings, profile(id));
+    await settings.update({ activeProfileId: 'b' });
+    await removeProfile(profiles, settings, 'b');
+    expect((await settings.get()).activeProfileId).toBe('a');
+    await removeProfile(profiles, settings, 'c');
+    expect((await settings.get()).activeProfileId).toBe('a');
+    await removeProfile(profiles, settings, 'a');
+    expect((await settings.get()).activeProfileId).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 import type { Rect } from '../types';
 
-export const OVERLAY_HOST_ID = 'browser-control-overlay';
+export const OVERLAY_HOST_ID = 'errand-overlay';
 
 const ACCENT = '124, 92, 255';
 

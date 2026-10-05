@@ -397,7 +397,7 @@ function hitAt(doc: Document, x: number, y: number): Element | null {
   let py = y;
   let el: Element | null = null;
   for (;;) {
-    const hit: Element | undefined = (root.elementsFromPoint?.(px, py) ?? []).find((e) => !e.closest('#browser-control-overlay'));
+    const hit: Element | undefined = (root.elementsFromPoint?.(px, py) ?? []).find((e) => !e.closest('#errand-overlay'));
     if (!hit || hit === el) break;
     el = hit;
     if (hit.shadowRoot) {

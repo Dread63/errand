@@ -47,10 +47,6 @@ export const expect = test.expect;
 export async function configure(sw: Worker, llmUrl: string, allowedOrigins: string[], profile: Record<string, unknown> = {}) {
   await sw.evaluate(
     async ({ llmUrl, allowedOrigins, profile }) => {
-      // Wait for onInstalled to seed default profiles so it cannot overwrite ours afterwards.
-      for (let i = 0; i < 100 && !(await chrome.storage.local.get('profiles')).profiles; i++) {
-        await new Promise((r) => setTimeout(r, 50));
-      }
       await chrome.storage.local.set({
         profiles: [
           { id: 'mock', name: 'Mock', baseUrl: llmUrl, apiKey: '', model: 'mock-model', supportsVision: false, contextMode: 'standard', contextWindow: 32000, maxScreenshots: 1, ...profile },

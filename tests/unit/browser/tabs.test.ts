@@ -58,10 +58,10 @@ async function started() {
 }
 
 describe('AgentTabs', () => {
-  it('groups and activates the seed tab under an "Agent" group', async () => {
+  it('groups and activates the seed tab under an "Errand" group', async () => {
     const { tabs, agent, groupUpdates } = await started();
     expect(tabs.groupCalls[0]).toEqual({ tabIds: [1] });
-    expect(groupUpdates[0]).toEqual({ title: 'Agent', color: 'purple' });
+    expect(groupUpdates[0]).toEqual({ title: 'Errand', color: 'purple' });
     expect(tabs.updates[0]).toEqual([1, { active: true }]);
     expect((await agent.active()).id).toBe(1);
   });

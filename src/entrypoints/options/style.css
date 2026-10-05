@@ -1,6 +1,7 @@
 .options { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
 .options h1 { margin: 0; font-size: 22px; }
-.options > .muted { margin: 2px 0 8px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.brand .muted { margin: 0; }
 section { border: 1px solid var(--border); background: var(--bg); border-radius: 14px; padding: 18px; margin-top: 16px; box-shadow: var(--shadow); }
 h2 { margin: 0 0 12px; font-size: 15px; }
 .muted, .status { color: var(--muted); }
@@ -29,3 +30,6 @@ fieldset.vision-models legend { font-size: 12.5px; padding: 0 4px; }
 .seg button { border: 0; background: transparent; padding: 5px 14px; border-radius: 8px; font-size: 12.5px; color: var(--muted); }
 .seg button.on { background: var(--bg); color: var(--fg); box-shadow: var(--shadow); }
 section > label, section > .field { margin-bottom: 12px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+.hint { font-size: 12px; color: var(--muted); }
+.hint code { font-size: 11.5px; padding: 1px 4px; border-radius: 4px; background: var(--surface-2); color: var(--fg); }
