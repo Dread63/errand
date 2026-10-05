@@ -15,7 +15,7 @@ In Chrome: `chrome://extensions` → enable **Developer mode** → **Load unpack
 
 ## Configure models
 
-Open the panel's ⚙ (Settings).
+Open Settings (gear icon in the panel header).
 
 **MacBook (MTPLX over Tailscale)**
 1. On the MacBook, start MTPLX listening on all interfaces (or the Tailscale IP), not only `127.0.0.1`.
@@ -31,9 +31,10 @@ Open the panel's ⚙ (Settings).
 
 ## Using it
 
-- Type a task, optionally attach images, PDFs or text files, press **Send**.
+- Type a task, optionally attach images, PDFs or text files (paperclip, drag-drop or paste), pick a model from the menu in the input box, press **Send**.
 - The agent works in a purple **Agent** tab group. It asks before touching a new site (Allow once / Always allow / Deny) and before risky actions (submits, purchases, passwords, downloads). **Stop** ends the task immediately.
 - Chrome shows a "started debugging this browser" bar while the agent runs — that is how it sends real clicks. Closing that bar pauses the task.
+- Theme: System / Light / Dark in Settings → General.
 - Past chats are under **History** (stored only on this device; screenshots are not saved).
 
 ## Develop
