@@ -1,5 +1,6 @@
 export type ContextMode = 'compact' | 'standard' | 'full';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
+export type Theme = 'system' | 'light' | 'dark';
 
 export interface Profile {
   id: string;
@@ -13,6 +14,8 @@ export interface Profile {
   maxScreenshots: number;
   /** Sent as reasoning_effort; unset leaves the model's default. On OpenCode Go GLM, low/medium turn thinking off. */
   reasoningEffort?: ReasoningEffort;
+  /** Model ids that accept images. When non-empty it overrides supportsVision per model. */
+  visionModels?: string[];
 }
 
 export interface Settings {
@@ -21,6 +24,7 @@ export interface Settings {
   riskyKeywords: string[];
   /** Log per-phase step timings to the service worker console. */
   debugTiming: boolean;
+  theme: Theme;
 }
 
 export interface Rect {
@@ -85,6 +89,8 @@ export interface Attachment {
   kind: 'image' | 'text';
   dataUrl?: string;
   text?: string;
+  /** Short description for the attachment card, e.g. "4 pages" or "12 KB". */
+  meta?: string;
 }
 
 /** What the model saw before a step. `detail` is rendered at capture time for the profile's mode. */
@@ -108,6 +114,12 @@ export type Turn =
       result: string;
       risky: boolean;
       observation?: ObservationRecord;
+      /** Epoch ms when the step's model request started and when the step finished. */
+      startedAt?: number;
+      endedAt?: number;
+      /** The model's streamed thinking for this step (truncated), and how long it thought. */
+      thinking?: string;
+      thinkingMs?: number;
     }
   | { kind: 'assistant'; text: string };
 

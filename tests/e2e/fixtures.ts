@@ -55,7 +55,7 @@ export async function configure(sw: Worker, llmUrl: string, allowedOrigins: stri
         profiles: [
           { id: 'mock', name: 'Mock', baseUrl: llmUrl, apiKey: '', model: 'mock-model', supportsVision: false, contextMode: 'standard', contextWindow: 32000, maxScreenshots: 1, ...profile },
         ],
-        settings: { activeProfileId: 'mock', stepLimit: 15, riskyKeywords: ['buy', 'delete'], debugTiming: false },
+        settings: { activeProfileId: 'mock', stepLimit: 15, riskyKeywords: ['buy', 'delete'], debugTiming: false, theme: 'system' },
         allowedOrigins,
       });
     },

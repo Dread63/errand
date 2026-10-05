@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   stepLimit: 30,
   riskyKeywords: DEFAULT_RISKY_KEYWORDS,
   debugTiming: false,
+  theme: 'system',
 };
 
 export class SettingsStore {
