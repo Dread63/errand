@@ -23,6 +23,28 @@ test('renders the final answer as markdown and collapses the activity card', asy
   await expect(panel.getByText('Finished')).toBeVisible();
 });
 
+test('a long activity card grows with its steps instead of being clipped', async ({ context, sw, extensionId, servers }) => {
+  await configure(sw, servers.llmUrl, [servers.siteUrl]);
+  servers.setScript([
+    ...Array.from({ length: 14 }, () => ({ name: 'wait', arguments: { ms: 1 }, content: 'Waiting a moment.' })),
+    { name: 'done', arguments: { summary: 'All done.' } },
+  ]);
+  const page = await context.newPage();
+  await page.goto(`${servers.siteUrl}/form.html`);
+  const panel = await openPanel(context, sw, extensionId, await tabIdFor(sw, page.url()));
+
+  await panel.getByTestId('composer-input').fill('Wait a lot');
+  await panel.getByTestId('composer-send').click();
+  await expect(panel.getByText('All done.')).toBeVisible();
+  await panel.getByRole('button', { name: /Worked through 15 steps/ }).click();
+
+  const card = panel.locator('.act');
+  const { client, scroll } = await card.evaluate((e) => ({ client: e.clientHeight, scroll: e.scrollHeight }));
+  expect(client).toBeGreaterThanOrEqual(scroll);
+  await panel.getByText('Finished').scrollIntoViewIfNeeded();
+  await expect(panel.getByText('Finished')).toBeInViewport();
+});
+
 test('picks a model from the menu and uses it for the next task', async ({ context, sw, extensionId, servers }) => {
   await configure(sw, servers.llmUrl, [servers.siteUrl]);
   servers.setScript([{ name: 'done', arguments: { summary: 'Used the second model.' } }]);

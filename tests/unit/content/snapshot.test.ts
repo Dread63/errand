@@ -159,6 +159,25 @@ describe('resolveElement', () => {
     expect(await resolveElement(reg, id, true)).toMatchObject({ ok: true, x: 60, y: 35 });
   });
 
+  it('reports the element drawn over the target, e.g. an open menu', async () => {
+    document.body.innerHTML = `<span role="checkbox" id="cb"><i></i></span><div role="listbox" aria-label="Search options"><b id="menu">x</b></div>`;
+    const reg = new ElementRegistry();
+    const id = snap('compact', reg).elements[0].id;
+    const original = document.elementsFromPoint;
+    try {
+      document.elementsFromPoint = () => [document.getElementById('menu')!, document.body];
+      const covered = await resolveElement(reg, id, true);
+      expect(covered).toMatchObject({ ok: true, coveredBy: { role: 'listbox', name: 'Search options' } });
+      // A hit on the element itself, or on something inside it, is not a cover.
+      document.elementsFromPoint = () => [document.querySelector('#cb i')!, document.body];
+      expect(await resolveElement(reg, id, true)).not.toHaveProperty('coveredBy');
+      document.elementsFromPoint = () => [];
+      expect(await resolveElement(reg, id, true)).not.toHaveProperty('coveredBy');
+    } finally {
+      document.elementsFromPoint = original;
+    }
+  });
+
   it('smooth-scrolls off-screen elements into view, then measures them', async () => {
     document.body.innerHTML = `<button data-below>Far</button>`;
     const reg = new ElementRegistry();

@@ -40,6 +40,12 @@ interface ModelReply {
 /** Ends the task with a message for the user. */
 class StopTask extends Error {}
 
+/** Step result for a risky action the user rejected; ends the task. */
+const REJECTED = 'The user rejected this action. It was not performed.';
+
+const WRAP_UP =
+  'The user rejected that action, so the task is paused. Do not call any tools. Reply to the user in one short paragraph: summarize what you have done so far, briefly explain why you wanted to take that action, and ask how they would like to proceed.';
+
 const NUDGE =
   'You replied without calling a tool, so nothing happened. If the task is finished, call done with your answer; otherwise call the next tool.';
 
@@ -101,7 +107,7 @@ async function observe(d: AgentDeps): Promise<ObservationRecord> {
   return record;
 }
 
-async function callModel(d: AgentDeps, messages: ChatMessage[], now: () => number): Promise<ModelReply> {
+async function callModel(d: AgentDeps, messages: ChatMessage[], now: () => number, tools = toolSchemas(d.profile.supportsVision)): Promise<ModelReply> {
   for (;;) {
     let thinking = '';
     let firstAt = 0;
@@ -109,7 +115,7 @@ async function callModel(d: AgentDeps, messages: ChatMessage[], now: () => numbe
     try {
       const result = await d.llm.chat({
         messages,
-        tools: toolSchemas(d.profile.supportsVision),
+        tools,
         signal: d.signal,
         onDelta: (t) => d.hooks.onDelta(t),
         onReasoning: (t) => {
@@ -155,7 +161,7 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn): Promise<string
       reason: typeof call.args.reason === 'string' ? call.args.reason : step.reasoning,
     });
     await d.driver.highlight(null).catch(() => {});
-    if (!ok) return 'The user rejected this action. Do not retry it; choose a different approach or call done.';
+    if (!ok) return REJECTED;
   }
   let result: string;
   try {
@@ -275,6 +281,15 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
       step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step)));
       acted = true;
       push(step);
+      if (step.result === REJECTED) {
+        // A rejection ends the task: the model explains itself and hands control back to the user.
+        const wrap = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
+        wrap.push({ role: 'user', content: WRAP_UP });
+        const end = (await callModel(d, wrap, now, [])).result;
+        const done = end.toolCalls[0]?.name === 'done' ? String(end.toolCalls[0].args.summary ?? '').trim() : '';
+        push({ kind: 'assistant', text: done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.' });
+        return turns;
+      }
     }
     push({ kind: 'assistant', text: `Stopped: reached the step limit of ${limit} steps.` });
   } catch (e) {

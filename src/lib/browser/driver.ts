@@ -120,9 +120,16 @@ export class ChromeDriver implements BrowserDriver {
     return shot ? { snapshot, tabs, screenshot: shot } : { snapshot, tabs };
   }
 
-  private async resolve(tabId: number, origin: string, id: number): Promise<ActionTarget> {
+  private async resolve(tabId: number, origin: string, id: number, pointer: boolean): Promise<ActionTarget> {
     const r = await this.content.send<ResolveResult>(tabId, { type: 'resolve', id, scroll: true });
     if (!r.ok) throw new ToolError(r.error);
+    if (pointer && r.coveredBy) {
+      // The click would land on whatever is on top, so report that instead of a false success.
+      const c = r.coveredBy;
+      throw new ToolError(
+        `Element [${id}] is covered by ${c.role} "${clip(c.name || c.tag, 60)}" (probably an open menu, popup or dialog), so it cannot be clicked. Close that first (press Escape, or click its close button), then try again.`,
+      );
+    }
     return { tabId, origin, element: r.info, point: { x: r.x, y: r.y } };
   }
 
@@ -135,7 +142,7 @@ export class ChromeDriver implements BrowserDriver {
     const byPoint = !byId && call.args.x !== undefined && POINT_TOOLS.has(call.name);
     const needsPage = byId || byPoint || call.name === 'type' || call.name === 'read_text';
     if (needsPage && !isWebUrl(url)) throw new ToolError('This page cannot be controlled. Use navigate or new_tab to go to a website.');
-    if (byId) return this.resolve(tabId, origin, Number(call.args.id));
+    if (byId) return this.resolve(tabId, origin, Number(call.args.id), POINT_TOOLS.has(call.name));
     if (byPoint) return this.at(tabId, origin, Number(call.args.x), Number(call.args.y));
     switch (call.name) {
       case 'type':

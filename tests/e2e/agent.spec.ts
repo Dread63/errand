@@ -64,3 +64,23 @@ test('links that open new tabs join the Agent tab group', async ({ context, sw, 
   const secondRequest = JSON.stringify(servers.requests[1].messages);
   expect(secondRequest).toContain('form.html');
 });
+
+test('clicking an element hidden under an open menu reports the menu instead of succeeding', async ({ context, sw, extensionId, servers }) => {
+  await configure(sw, servers.llmUrl, [servers.siteUrl]);
+  servers.setScript([
+    { name: 'click', arguments: { id: 1 } },
+    { name: 'key', arguments: { combo: 'Escape' } },
+    { name: 'click', arguments: { id: 1 } },
+    { name: 'done', arguments: { summary: 'Selected.' } },
+  ]);
+  const page = await context.newPage();
+  await page.goto(`${servers.siteUrl}/covered.html`);
+  const panel = await openPanel(context, sw, extensionId, await tabIdFor(sw, page.url()));
+
+  await panel.getByTestId('composer-input').fill('Tick the checkbox');
+  await panel.getByTestId('composer-send').click();
+  await expect(panel.getByText('Selected.')).toBeVisible();
+
+  expect(JSON.stringify(servers.requests[1].messages)).toContain('is covered by listbox \\"Search options\\"');
+  await expect(page.locator('#cb')).toHaveAttribute('aria-checked', 'true');
+});

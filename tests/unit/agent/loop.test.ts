@@ -136,6 +136,36 @@ describe('runAgent', () => {
     expect(s.driver.highlights[1]).toBeNull();
   });
 
+  it('a rejected risky action ends the task with a tool-less reply to the user', async () => {
+    const s = setup([
+      toolCall('click', { id: 2 }),
+      textReply('I clicked Search, then tried to delete them. How would you like to proceed?'),
+      toolCall('click', { id: 1 }),
+    ]);
+    s.driver.elements[2] = el(2, { name: 'Delete' });
+    s.gate.riskyAnswers = [false];
+    const turns = await runAgent(task, s.deps);
+    expect(s.llm.requests).toHaveLength(2);
+    expect(s.llm.requests[1].tools).toEqual([]);
+    expect(JSON.stringify(s.llm.requests[1].messages)).toMatch(/rejected/);
+    expect(s.driver.performed).toEqual([]);
+    expect(last(turns)).toEqual({ kind: 'assistant', text: 'I clicked Search, then tried to delete them. How would you like to proceed?' });
+  });
+
+  it('after a rejection, a done call or an empty reply still ends the task', async () => {
+    const s = setup([toolCall('click', { id: 2 }), toolCall('done', { summary: 'Stopping here.' })]);
+    s.driver.elements[2] = el(2, { name: 'Delete' });
+    s.gate.riskyAnswers = [false];
+    expect(last(await runAgent(task, s.deps))).toEqual({ kind: 'assistant', text: 'Stopping here.' });
+
+    const s2 = setup([toolCall('click', { id: 2 }), textReply('')]);
+    s2.driver.elements[2] = el(2, { name: 'Delete' });
+    s2.gate.riskyAnswers = [false];
+    const turns = await runAgent(task, s2.deps);
+    expect(s2.llm.requests).toHaveLength(2);
+    expect(last(turns)).toMatchObject({ kind: 'assistant', text: expect.stringMatching(/rejected/) });
+  });
+
   it('approved risky actions are performed', async () => {
     const s = setup([toolCall('click', { id: 2 }), toolCall('done', { summary: 'x' })]);
     s.driver.elements[2] = el(2, { isSubmit: true });
