@@ -3,14 +3,18 @@ import { listModels } from '@/lib/llm/client';
 import { chromeKV } from '@/lib/storage/kv';
 import { ProfileStore } from '@/lib/storage/profiles';
 import { SettingsStore } from '@/lib/storage/settings';
+import { ModelCatalog } from '@/lib/storage/models';
 import { SitePermissionStore } from '@/lib/storage/sites';
-import type { ContextMode, Profile } from '@/lib/types';
+import type { ContextMode, Profile, Theme } from '@/lib/types';
 import { newProfile, parseKeywords, validateProfile } from '@/lib/ui/profileForm';
+import { useTheme } from '@/lib/ui/useTheme';
 
 export function App() {
+  useTheme();
   return (
     <main className="options">
-      <h1>Browser Control settings</h1>
+      <h1>Settings</h1>
+      <p className="muted">Browser Control</p>
       <ProfilesSection />
       <SitesSection />
       <GeneralSection />
@@ -29,16 +33,21 @@ function ProfilesSection() {
 
   return (
     <section>
-      <h2>Model profiles</h2>
+      <h2>Providers</h2>
       <ul className="rows">
         {profiles.map((p) => (
           <li key={p.id}>
             <span>
-              <strong>{p.name}</strong> — {p.model || 'no model'} <small>({p.contextMode}{p.supportsVision ? ', vision' : ''}{p.reasoningEffort ? `, ${p.reasoningEffort} reasoning` : ''})</small>
+              <strong>{p.name}</strong>
+              <span className="muted">{p.model || 'no model'}</span>
+              <span className="tag">{p.contextMode}</span>
+              {(p.supportsVision || (p.visionModels?.length ?? 0) > 0) && <span className="tag">vision</span>}
+              {p.reasoningEffort && <span className="tag">{p.reasoningEffort} reasoning</span>}
             </span>
             <span className="row-actions">
-              <button onClick={() => setEditing(p)}>Edit</button>
+              <button className="btn" onClick={() => setEditing(p)}>Edit</button>
               <button
+                className="btn ghost danger"
                 onClick={async () => {
                   await store.remove(p.id);
                   await refresh();
@@ -50,7 +59,7 @@ function ProfilesSection() {
           </li>
         ))}
       </ul>
-      <button onClick={() => setEditing(newProfile())}>Add profile</button>
+      <button className="btn" onClick={() => setEditing(newProfile())}>Add provider</button>
       {editing && (
         <ProfileForm
           key={editing.id}
@@ -79,6 +88,8 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
     try {
       const ids = await listModels(p);
       setModels(ids);
+      // Warm the side panel's model menu with the same list.
+      await new ModelCatalog(chromeKV(), async () => ids).refresh(p, { force: true });
       setStatus(`Connected. ${ids.length} model(s) available${ids.length ? ' — pick one in the Model field' : ''}.`);
     } catch (e) {
       setStatus(`Failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -107,6 +118,23 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
       <label className="check">
         <input type="checkbox" checked={p.supportsVision} onChange={(e) => set('supportsVision', e.target.checked)} /> Supports images (vision)
       </label>
+      {models.length > 0 && (
+        <fieldset className="vision-models">
+          <legend>Vision-capable models <span className="muted">(leave all unticked to use the checkbox above for every model)</span></legend>
+          {models.map((m) => (
+            <label key={m} className="check">
+              <input
+                type="checkbox"
+                checked={(p.visionModels ?? []).includes(m)}
+                onChange={(e) =>
+                  set('visionModels', e.target.checked ? [...(p.visionModels ?? []), m] : (p.visionModels ?? []).filter((x) => x !== m))
+                }
+              />
+              {m}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <label>
         Context mode
         <select value={p.contextMode} onChange={(e) => set('contextMode', e.target.value as ContextMode)}>
@@ -131,10 +159,10 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
       </label>
       {errors.length > 0 && <ul className="errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
       <div className="actions">
-        <button onClick={() => void test()}>Test connection</button>
+        <button className="btn" onClick={() => void test()}>Test connection</button>
         <span className="status">{status}</span>
-        <button onClick={onCancel}>Cancel</button>
-        <button className="primary" onClick={save}>Save</button>
+        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn primary" onClick={save}>Save</button>
       </div>
     </div>
   );
@@ -161,7 +189,7 @@ function SitesSection() {
           {origins.map((o) => (
             <li key={o}>
               <span>{o}</span>
-              <button onClick={() => void store.revoke(o).then(refresh)}>Revoke</button>
+              <button className="btn ghost danger" onClick={() => void store.revoke(o).then(refresh)}>Revoke</button>
             </li>
           ))}
         </ul>
@@ -175,12 +203,14 @@ function GeneralSection() {
   const [stepLimit, setStepLimit] = useState(30);
   const [keywords, setKeywords] = useState('');
   const [debugTiming, setDebugTiming] = useState(false);
+  const [theme, setTheme] = useState<Theme>('system');
   const [saved, setSaved] = useState('');
   useEffect(() => {
     void store.get().then((s) => {
       setStepLimit(s.stepLimit);
       setKeywords(s.riskyKeywords.join(', '));
       setDebugTiming(s.debugTiming);
+      setTheme(s.theme);
     });
   }, [store]);
 
@@ -193,7 +223,26 @@ function GeneralSection() {
 
   return (
     <section>
-      <h2>Agent behaviour</h2>
+      <h2>General</h2>
+      <div className="field">
+        <span>Theme</span>
+        <div className="seg" role="radiogroup" aria-label="Theme">
+          {(['system', 'light', 'dark'] as const).map((t) => (
+            <button
+              key={t}
+              role="radio"
+              aria-checked={theme === t}
+              className={theme === t ? 'on' : ''}
+              onClick={() => {
+                setTheme(t);
+                void store.update({ theme: t });
+              }}
+            >
+              {t === 'system' ? 'System' : t === 'light' ? 'Light' : 'Dark'}
+            </button>
+          ))}
+        </div>
+      </div>
       <label>Step limit per task<input type="number" min={1} max={200} value={stepLimit} onChange={(e) => setStepLimit(Number(e.target.value))} /></label>
       <label>
         Words that make a click need approval (comma or newline separated)
@@ -203,7 +252,7 @@ function GeneralSection() {
         <input type="checkbox" checked={debugTiming} onChange={(e) => setDebugTiming(e.target.checked)} /> Log step timings to the service worker console
       </label>
       <div className="actions">
-        <button className="primary" onClick={() => void save()}>Save</button>
+        <button className="btn primary" onClick={() => void save()}>Save</button>
         <span className="status">{saved}</span>
       </div>
     </section>

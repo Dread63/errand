@@ -1,19 +1,30 @@
-:root { --bg: #fff; --fg: #1d1d1f; --muted: #6b6b76; --surface: #f4f4f7; --border: #dedee6; --accent: #7c5cff; --danger: #d93f3f; color-scheme: light dark; }
-@media (prefers-color-scheme: dark) { :root { --bg: #17171c; --fg: #ececf1; --muted: #9a9aa8; --surface: #222229; --border: #34343f; } }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif; }
-.options { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
-section { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; }
-h2 { margin-top: 0; font-size: 16px; }
-button { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.options { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+.options h1 { margin: 0; font-size: 22px; }
+.options > .muted { margin: 2px 0 8px; }
+section { border: 1px solid var(--border); background: var(--bg); border-radius: 14px; padding: 18px; margin-top: 16px; box-shadow: var(--shadow); }
+h2 { margin: 0 0 12px; font-size: 15px; }
+.muted, .status { color: var(--muted); }
 .rows { list-style: none; padding: 0; margin: 0 0 12px; }
-.rows li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.rows li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.rows li:last-child { border-bottom: 0; }
+.rows li > span:first-child { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
 .row-actions { display: flex; gap: 6px; }
-.form { display: grid; gap: 10px; margin-top: 12px; }
-label { display: grid; gap: 4px; }
-label.check { display: flex; gap: 6px; align-items: center; }
-input, select, textarea { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); }
-.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-.status, .muted { color: var(--muted); }
+.tag { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+.form { display: grid; gap: 12px; margin-top: 14px; padding: 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+label, .field { display: grid; gap: 4px; font-size: 13px; }
+label.check { display: flex; gap: 8px; align-items: center; }
+input, select, textarea { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--fg); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+fieldset.vision-models { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; display: grid; gap: 4px; max-height: 200px; overflow-y: auto; }
+fieldset.vision-models legend { font-size: 12.5px; padding: 0 4px; }
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.actions .status { flex: 1; }
 .errors { color: var(--danger); margin: 0; }
+.btn { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); font-size: 13px; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.danger { color: var(--danger); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface-2); justify-self: start; }
+.seg button { border: 0; background: transparent; padding: 5px 14px; border-radius: 8px; font-size: 12.5px; color: var(--muted); }
+.seg button.on { background: var(--bg); color: var(--fg); box-shadow: var(--shadow); }
