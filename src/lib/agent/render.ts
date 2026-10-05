@@ -9,6 +9,7 @@ export function renderElement(e: ElementInfo, mode: ContextMode): string {
   if (e.value) s += ` value="${clip(e.value, 60)}"`;
   if (e.checked !== undefined) s += e.checked ? ' checked' : ' unchecked';
   if (e.disabled) s += ' disabled';
+  if (e.group) s += ` in "${clip(e.group, 80)}"`;
   if (e.options) {
     const shown = e.options.slice(0, 10).map((o) => `"${clip(o, 30)}"`);
     s += ` options=[${shown.join(', ')}${e.options.length > 10 ? ', …' : ''}]`;

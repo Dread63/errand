@@ -43,6 +43,8 @@ export interface ElementInfo {
   isSubmit: boolean;
   download: boolean;
   context?: string;
+  /** For radios/checkboxes: the question or group they belong to (fieldset legend or group label). */
+  group?: string;
   rect: Rect;
 }
 

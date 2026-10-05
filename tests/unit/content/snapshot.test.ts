@@ -16,6 +16,7 @@ function rect(top: number, width = 100, height = 30): DOMRect {
 beforeEach(() => {
   Element.prototype.getBoundingClientRect = function (this: Element) {
     if (this.hasAttribute('data-hidden')) return rect(0, 0, 0);
+    if (this.hasAttribute('data-tiny')) return rect(20, 1, 1);
     return rect(this.hasAttribute('data-below') ? 5000 : 20);
   };
   document.body.innerHTML = '';
@@ -77,6 +78,30 @@ describe('takeSnapshot', () => {
     expect(snap('full').elements.map((e) => e.name)).toEqual(['Below', 'Shown']);
   });
 
+  it('keeps transparent custom radios and labels them with their question', () => {
+    document.body.innerHTML = `
+      <fieldset><legend>Question 1 of 60: You regularly make new friends.</legend>
+        <span><input type="radio" name="q1" aria-label="I strongly agree" style="opacity:0"><span>○</span></span>
+      </fieldset>`;
+    expect(byName(snap(), 'I strongly agree')).toMatchObject({
+      role: 'radio',
+      group: 'Question 1 of 60: You regularly make new friends.',
+      rect: { x: 10, y: 20, w: 100, h: 30 },
+    });
+  });
+
+  it('uses the visible label of a visually-hidden (tiny) checkbox as its target', () => {
+    document.body.innerHTML = `<div role="group" aria-label="Toppings"><label data-label>Cheese <input type="checkbox" data-tiny></label></div>`;
+    const reg = new ElementRegistry();
+    const cheese = byName(snap('compact', reg), 'Cheese');
+    expect(cheese).toMatchObject({ role: 'checkbox', group: 'Toppings', rect: { x: 10, y: 20, w: 100, h: 30 } });
+  });
+
+  it('still skips transparent non-form elements', () => {
+    document.body.innerHTML = `<button style="opacity:0">Ghost</button>`;
+    expect(byName(snap(), 'Ghost')).toBeUndefined();
+  });
+
   it('includes open shadow DOM content', () => {
     document.body.innerHTML = `<div id="host"></div>`;
     document.getElementById('host')!.attachShadow({ mode: 'open' }).innerHTML = `<button>Inner</button>`;
@@ -125,6 +150,13 @@ describe('resolveElement', () => {
     const id = snap('compact', reg).elements[0].id;
     expect(await resolveElement(reg, id, true)).toMatchObject({ ok: true, x: 60, y: 35 });
     expect(scrolls).toEqual([]);
+  });
+
+  it('resolves a tiny checkbox to the center of its label', async () => {
+    document.body.innerHTML = `<label>Cheese <input type="checkbox" data-tiny></label>`;
+    const reg = new ElementRegistry();
+    const id = snap('compact', reg).elements[0].id;
+    expect(await resolveElement(reg, id, true)).toMatchObject({ ok: true, x: 60, y: 35 });
   });
 
   it('smooth-scrolls off-screen elements into view, then measures them', async () => {

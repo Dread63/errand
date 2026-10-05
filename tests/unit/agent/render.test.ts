@@ -35,6 +35,12 @@ describe('renderElement', () => {
     );
     expect(renderElement(el(5, { role: 'combobox', options: ['S', 'M'] }), 'compact')).toBe('[5] combobox "Item 5" options=["S", "M"]');
   });
+  it('shows the question a radio belongs to in every mode', () => {
+    expect(renderElement(el(7, { role: 'radio', name: 'I agree', checked: false, group: 'You enjoy parties.' }), 'compact')).toBe(
+      '[7] radio "I agree" unchecked in "You enjoy parties."',
+    );
+  });
+
   it('adds hrefs outside compact and nearby text only in full', () => {
     const link = el(6, { role: 'link', href: 'https://shop.test/x', context: 'Price $5' });
     expect(renderElement(link, 'compact')).toBe('[6] link "Item 6"');

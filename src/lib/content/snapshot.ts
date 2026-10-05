@@ -97,10 +97,51 @@ function rectOf(el: Element): Rect {
   return { x: Math.round(r.left + o.x), y: Math.round(r.top + o.y), w: Math.round(r.width), h: Math.round(r.height) };
 }
 
+const isToggle = (el: Element) => el.tagName === 'INPUT' && /^(radio|checkbox)$/i.test(el.getAttribute('type') ?? '');
+
+function findLabel(el: Element): Element | null {
+  if (el.id) {
+    const forLabel = Array.from(el.ownerDocument.querySelectorAll('label')).find((l) => l.getAttribute('for') === el.id);
+    if (forLabel) return forLabel;
+  }
+  return el.closest('label');
+}
+
+/**
+ * Where an element is drawn and should be clicked. Custom-styled radios/checkboxes are often
+ * shrunk to a pixel (sr-only); their visible label is the real target then.
+ */
+function targetOf(el: Element): { rect: Rect; via: Element } {
+  const rect = rectOf(el);
+  if (isToggle(el) && (rect.w < 4 || rect.h < 4)) {
+    const label = findLabel(el);
+    if (label) {
+      const lr = rectOf(label);
+      if (lr.w > 0 && lr.h > 0) return { rect: lr, via: label };
+    }
+  }
+  return { rect, via: el };
+}
+
+function groupLabel(el: Element): string | undefined {
+  if (!isToggle(el)) return undefined;
+  const legend = el.closest('fieldset')?.querySelector('legend')?.textContent;
+  if (legend && norm(legend)) return clip(norm(legend), 120);
+  const group = el.closest('[role=radiogroup],[role=group]');
+  if (!group) return undefined;
+  const aria = group.getAttribute('aria-label');
+  if (aria?.trim()) return clip(norm(aria), 120);
+  const by = group.getAttribute('aria-labelledby');
+  const text = by ? by.split(/\s+/).map((id) => el.ownerDocument.getElementById(id)?.textContent ?? '').join(' ') : '';
+  return norm(text) ? clip(norm(text), 120) : undefined;
+}
+
 function isVisible(el: Element, rect: Rect, viewport: { w: number; h: number }, viewportOnly: boolean): boolean {
   if (rect.w <= 0 || rect.h <= 0) return false;
   const style = el.ownerDocument.defaultView?.getComputedStyle(el);
-  if (style && (style.visibility === 'hidden' || style.display === 'none' || (style.opacity !== '' && Number(style.opacity) === 0))) {
+  // Transparent radios/checkboxes laid over a custom-drawn control are still what gets clicked.
+  const transparent = style && style.opacity !== '' && Number(style.opacity) === 0 && !isToggle(el);
+  if (style && (style.visibility === 'hidden' || style.display === 'none' || transparent)) {
     return false;
   }
   if (viewportOnly && (rect.y + rect.h < 0 || rect.y > viewport.h || rect.x + rect.w < 0 || rect.x > viewport.w)) return false;
@@ -108,13 +149,8 @@ function isVisible(el: Element, rect: Rect, viewport: { w: number; h: number }, 
 }
 
 function labelText(el: Element): string {
-  const doc = el.ownerDocument;
-  if (el.id) {
-    const forLabel = Array.from(doc.querySelectorAll('label')).find((l) => l.getAttribute('for') === el.id);
-    if (forLabel) return norm(forLabel.textContent ?? '');
-  }
-  const wrapping = el.closest('label');
-  return wrapping ? norm(wrapping.textContent ?? '') : '';
+  const label = findLabel(el);
+  return label ? norm(label.textContent ?? '') : '';
 }
 
 function accessibleName(el: Element): string {
@@ -208,6 +244,8 @@ function describe(el: Element, id: number, rect: Rect, withContext: boolean): El
   const ariaChecked = el.getAttribute('aria-checked');
   if (ariaChecked) info.checked = ariaChecked === 'true';
   if ((el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true') info.disabled = true;
+  const group = groupLabel(el);
+  if (group) info.group = group;
   if (withContext) {
     const ctx = norm(el.parentElement?.textContent ?? '');
     if (ctx && ctx !== info.name) info.context = clip(ctx, 160);
@@ -224,8 +262,8 @@ export function takeSnapshot(doc: Document, reg: ElementRegistry, mode: ContextM
   collect(doc, found, new Set());
   const elements: ElementInfo[] = [];
   for (const el of found) {
-    const rect = rectOf(el);
-    if (!isVisible(el, rect, viewport, viewportOnly)) continue;
+    const { rect, via } = targetOf(el);
+    if (!isVisible(via, rect, viewport, viewportOnly)) continue;
     elements.push(describe(el, reg.idFor(el), rect, mode === 'full'));
   }
   const headings =
@@ -270,11 +308,12 @@ async function waitForStableRect(el: Element, maxMs = 1000, pollMs = 50): Promis
 export async function resolveElement(reg: ElementRegistry, id: number, scroll: boolean): Promise<ResolveResult> {
   const el = reg.get(id);
   if (!el) return { ok: false, error: `Element [${id}] no longer exists on the page. Use an id from the latest page state.` };
-  if (scroll && !inViewport(el, rectOf(el)) && typeof (el as HTMLElement).scrollIntoView === 'function') {
-    (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-    await waitForStableRect(el);
+  const via = targetOf(el).via;
+  if (scroll && !inViewport(via, rectOf(via)) && typeof (via as HTMLElement).scrollIntoView === 'function') {
+    (via as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    await waitForStableRect(via);
   }
-  const rect = rectOf(el);
+  const rect = targetOf(el).rect;
   if (rect.w <= 0 || rect.h <= 0) return { ok: false, error: `Element [${id}] is not visible right now.` };
   return { ok: true, x: Math.round(rect.x + rect.w / 2), y: Math.round(rect.y + rect.h / 2), info: describe(el, id, rect, false) };
 }
@@ -300,7 +339,7 @@ export function focusedElementInfo(doc: Document, reg: ElementRegistry): Element
     break;
   }
   if (!el || !el.isConnected || el === doc.body || el === doc.documentElement) return null;
-  return describe(el, reg.idFor(el), rectOf(el), false);
+  return describe(el, reg.idFor(el), targetOf(el).rect, false);
 }
 
 export function readPageText(doc: Document, maxChars: number): string {
