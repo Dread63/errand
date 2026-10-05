@@ -20,7 +20,7 @@ export const DEFAULT_RISKY_KEYWORDS = [
 ];
 
 export const DEFAULT_SETTINGS: Settings = {
-  activeProfileId: 'macbook',
+  activeProfileId: null,
   stepLimit: 30,
   riskyKeywords: DEFAULT_RISKY_KEYWORDS,
   debugTiming: false,

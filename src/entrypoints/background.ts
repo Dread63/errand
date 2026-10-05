@@ -14,10 +14,6 @@ import { SitePermissionStore } from '@/lib/storage/sites';
 export default defineBackground(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
-  chrome.runtime.onInstalled.addListener(() => {
-    new ProfileStore(chromeKV()).seedDefaults().catch(() => {});
-  });
-
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== PANEL_PORT) return;
     const kv = chromeKV();

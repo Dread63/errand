@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listModels } from '@/lib/llm/client';
 import { chromeKV } from '@/lib/storage/kv';
-import { ProfileStore } from '@/lib/storage/profiles';
+import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
 import { SettingsStore } from '@/lib/storage/settings';
 import { ModelCatalog } from '@/lib/storage/models';
 import { SitePermissionStore } from '@/lib/storage/sites';
@@ -24,10 +24,10 @@ export function App() {
 }
 
 function ProfilesSection() {
-  const store = useMemo(() => new ProfileStore(chromeKV()), []);
+  const stores = useMemo(() => ({ profiles: new ProfileStore(chromeKV()), settings: new SettingsStore(chromeKV()) }), []);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editing, setEditing] = useState<Profile | null>(null);
-  const refresh = useCallback(async () => setProfiles(await store.list()), [store]);
+  const refresh = useCallback(async () => setProfiles(await stores.profiles.list()), [stores]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -50,7 +50,7 @@ function ProfilesSection() {
               <button
                 className="btn ghost danger"
                 onClick={async () => {
-                  await store.remove(p.id);
+                  await removeProfile(stores.profiles, stores.settings, p.id);
                   await refresh();
                 }}
               >
@@ -67,7 +67,7 @@ function ProfilesSection() {
           initial={editing}
           onCancel={() => setEditing(null)}
           onSave={async (p) => {
-            await store.save(p);
+            await saveProfile(stores.profiles, stores.settings, p);
             setEditing(null);
             await refresh();
           }}
@@ -114,7 +114,7 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
       <label>Name<input value={p.name} onChange={(e) => set('name', e.target.value)} /></label>
       <label>
         Base URL
-        <input value={p.baseUrl} placeholder="http://macbook.your-tailnet.ts.net:8000/v1" onChange={(e) => set('baseUrl', e.target.value)} />
+        <input value={p.baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => set('baseUrl', e.target.value)} />
       </label>
       <label>API key<input type="password" value={p.apiKey} autoComplete="off" onChange={(e) => set('apiKey', e.target.value)} /></label>
       <label>
