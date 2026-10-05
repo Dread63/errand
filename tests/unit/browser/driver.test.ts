@@ -47,9 +47,11 @@ function setup(url = 'https://shop.test/') {
   let focused: ElementInfo | null = info({ tag: 'input', inForm: true });
   let pointInfo: ElementInfo | null = info({ tag: 'div', role: 'generic', name: 'A1', rect: { x: 100, y: 40, w: 80, h: 20 } });
   const fitted: string[] = [];
+  const labels: string[] = [];
   const content: MessengerLike = {
     ensureInjected: async () => void log.push('content.inject'),
     send: async <T,>(_t: number, req: ContentRequest): Promise<T> => {
+      if (req.type === 'overlay' && req.op === 'move' && req.label) labels.push(req.label);
       let detail = '';
       if (req.type === 'overlay' && (req.op === 'move' || req.op === 'click')) detail = `:${req.x},${req.y}`;
       if (req.type === 'overlay' && req.op === 'hover') detail = req.rect ? ':ring' : ':clear';
@@ -77,6 +79,7 @@ function setup(url = 'https://shop.test/') {
     log,
     tab,
     fitted,
+    labels,
     conflictHandler: () => handler,
     setResolve: (r: ResolveResult) => (resolveResult = r),
     setFocused: (e: ElementInfo | null) => (focused = e),
@@ -237,6 +240,20 @@ describe('ChromeDriver.perform', () => {
       'content.overlay.click:60,35',
       'content.overlay.hover:clear',
     ]);
+  });
+
+  it('sends the step description with cursor moves so the page can label the cursor', async () => {
+    const { driver, labels } = setup();
+    const t = await driver.target(call('click', { id: 4 }));
+    await driver.perform(call('click', { id: 4 }), t, 'compact');
+    expect(labels).toEqual(['Click button "Go"']);
+  });
+
+  it('keeps the label off focus-follow moves after a key press', async () => {
+    const { driver, labels } = setup();
+    const t = await driver.target(call('key', { combo: 'Tab' }));
+    await driver.perform(call('key', { combo: 'Tab' }), t, 'compact');
+    expect(labels.every((l) => l.startsWith('Press'))).toBe(true);
   });
 
   it('types by focusing, clearing, inserting and optionally pressing Enter', async () => {

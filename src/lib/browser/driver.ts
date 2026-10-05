@@ -1,4 +1,5 @@
 import { MODE_LIMITS } from '../agent/modes';
+import { describeCall } from '../agent/tools';
 import type { BrowserDriver } from '../agent/ports';
 import type { ContentRequest, ResolveResult } from '../content/protocol';
 import { ToolError } from '../errors';
@@ -24,6 +25,8 @@ const label = (t: ActionTarget) =>
 export class ChromeDriver implements BrowserDriver {
   private viewport = { w: 1280, h: 800 };
   private ringShown = false;
+  /** What the current action is, shown next to the on-page cursor. */
+  private stepLabel: string | undefined;
   private guardedTabs = new Set<number>();
   private scrollStepMs: number;
   private isMac: boolean;
@@ -181,7 +184,7 @@ export class ChromeDriver implements BrowserDriver {
 
   private async pointTo(t: ActionTarget): Promise<{ x: number; y: number }> {
     if (!t.point) throw new ToolError('This action needs an element id or x and y.');
-    await this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y });
+    await this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y, label: this.stepLabel });
     await this.overlay(t.tabId, { type: 'overlay', op: 'hover', rect: t.element?.rect ?? null });
     this.ringShown = true;
     return t.point;
@@ -202,6 +205,7 @@ export class ChromeDriver implements BrowserDriver {
   }
 
   async perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
+    this.stepLabel = describeCall(call, target);
     this.ringShown = false;
     try {
       return await this.act(call, target, mode);
@@ -252,7 +256,7 @@ export class ChromeDriver implements BrowserDriver {
         if (target.point) return `Scrolled ${label(target)} into view.`;
         const x = Math.round(this.viewport.w / 2);
         const y = Math.round(this.viewport.h / 2);
-        await this.overlay(tabId, { type: 'overlay', op: 'move', x, y });
+        await this.overlay(tabId, { type: 'overlay', op: 'move', x, y, label: this.stepLabel });
         await this.smoothWheel(tabId, x, y, (a.direction === 'up' ? -1 : 1) * Math.round(this.viewport.h * 0.8));
         await sleep(this.settleMs);
         return `Scrolled ${a.direction}.`;
