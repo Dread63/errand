@@ -12,7 +12,7 @@ export type ContentRequest =
   /** Suspend (on) or restore (off) other extensions' frames, which block the debugger. */
   | { type: 'guard'; on: boolean }
   | { type: 'overlay'; op: 'active'; on: boolean }
-  | { type: 'overlay'; op: 'move'; x: number; y: number }
+  | { type: 'overlay'; op: 'move'; x: number; y: number; label?: string }
   | { type: 'overlay'; op: 'click'; x: number; y: number }
   | { type: 'overlay'; op: 'hover'; rect: Rect | null }
   | { type: 'overlay'; op: 'highlight'; rect: Rect | null; label?: string };

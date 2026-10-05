@@ -38,7 +38,7 @@ export function createContentHandler(doc: Document, opts: { moveMs?: number; own
             ov().setActive(req.on);
             return null;
           case 'move':
-            await ov().moveTo(req.x, req.y);
+            await ov().moveTo(req.x, req.y, req.label);
             return null;
           case 'click':
             ov().click(req.x, req.y);

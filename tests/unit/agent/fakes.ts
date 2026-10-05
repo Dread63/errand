@@ -16,15 +16,19 @@ export const toolCall = (name: string, args: Record<string, unknown> = {}, conte
 });
 export const textReply = (content: string): ChatResult => ({ content, toolCalls: [] });
 
+export type FakeReply = ChatResult & { thinking?: string };
+
 export class FakeLlm implements LlmClient {
   requests: ChatRequest[] = [];
-  constructor(public script: Array<ChatResult | Error>) {}
+  constructor(public script: Array<FakeReply | Error>) {}
   async chat(req: ChatRequest): Promise<ChatResult> {
     this.requests.push(req);
     const next = this.script.shift();
     if (!next) throw new Error('FakeLlm script exhausted');
     if (next instanceof Error) throw next;
-    return next;
+    if (next.thinking) for (const ch of next.thinking.match(/.{1,5}/gs) ?? []) req.onReasoning?.(ch);
+    const { thinking: _t, ...result } = next;
+    return result;
   }
 }
 
@@ -136,7 +140,7 @@ export const testProfile: Profile = {
   maxScreenshots: 1,
 };
 
-export function setup(script: Array<ChatResult | Error>) {
+export function setup(script: Array<FakeReply | Error>) {
   const llm = new FakeLlm(script);
   const driver = new FakeDriver();
   const gate = new FakeGate();

@@ -9,6 +9,7 @@ import type { SettingsStore } from '../storage/settings';
 import type { SitePermissionStore } from '../storage/sites';
 import type { Conversation, Profile } from '../types';
 import { setTimingEnabled, timed } from '../timing';
+import { supportsVisionFor } from '../ui/models';
 import { errMsg } from '../util';
 
 export interface DriverHandle extends BrowserDriver {
@@ -134,15 +135,17 @@ export class PanelSession {
   private async run(msg: Extract<PanelToBg, { type: 'start' }>): Promise<void> {
     const settings = await this.deps.settings.get();
     setTimingEnabled(settings.debugTiming);
-    const profile = settings.activeProfileId ? await this.deps.profiles.get(settings.activeProfileId) : undefined;
-    if (!profile) {
-      this.post({ type: 'error', message: 'No model profile selected. Choose one in the panel header or add one in Settings.' });
+    const stored = settings.activeProfileId ? await this.deps.profiles.get(settings.activeProfileId) : undefined;
+    if (!stored) {
+      this.post({ type: 'error', message: 'No model selected. Choose one in the model menu or add a provider in Settings.' });
       return;
     }
+    // Vision is resolved once for the chosen model, so the agent loop keeps reading supportsVision.
+    const profile: Profile = { ...stored, supportsVision: supportsVisionFor(stored, stored.model) };
     if (!profile.supportsVision && msg.attachments.some((a) => a.kind === 'image')) {
       this.post({
         type: 'error',
-        message: `The profile "${profile.name}" does not support images. Remove image attachments or enable vision for this profile.`,
+        message: `The model "${profile.model}" does not support images. Remove image attachments or mark it as vision-capable in Settings.`,
       });
       return;
     }
