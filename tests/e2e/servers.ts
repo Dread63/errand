@@ -13,7 +13,7 @@ export interface Servers {
   siteUrl: string;
   llmUrl: string;
   setScript(calls: ScriptedCall[]): void;
-  requests: Array<{ messages: unknown[]; tools: unknown[] }>;
+  requests: Array<{ model?: string; messages: unknown[]; tools: unknown[] }>;
   close(): Promise<void>;
 }
 
@@ -54,7 +54,7 @@ export async function startServers(): Promise<Servers> {
         });
         res.end('data: [DONE]\n\n');
       } else if (req.url?.endsWith('/models')) {
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }] }));
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'mock-model' }, { id: 'mock-model-2' }] }));
       } else {
         res.writeHead(404).end();
       }
