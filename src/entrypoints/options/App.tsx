@@ -7,15 +7,22 @@ import { ModelCatalog } from '@/lib/storage/models';
 import { SitePermissionStore } from '@/lib/storage/sites';
 import type { ContextMode, Profile, Theme } from '@/lib/types';
 import { supportsVisionFor, visionChoices } from '@/lib/ui/models';
-import { newProfile, parseKeywords, validateProfile } from '@/lib/ui/profileForm';
+import { Logo } from '@/lib/ui/icons';
+import { PROVIDER_PRESETS, type ProviderPreset, profileFromPreset } from '@/lib/ui/presets';
+import { parseKeywords, validateProfile } from '@/lib/ui/profileForm';
 import { useTheme } from '@/lib/ui/useTheme';
 
 export function App() {
   useTheme();
   return (
     <main className="options">
-      <h1>Settings</h1>
-      <p className="muted">Errand</p>
+      <header className="brand">
+        <Logo size={36} />
+        <div>
+          <h1>Errand</h1>
+          <p className="muted">Settings</p>
+        </div>
+      </header>
       <ProfilesSection />
       <SitesSection />
       <GeneralSection />
@@ -27,6 +34,8 @@ function ProfilesSection() {
   const stores = useMemo(() => ({ profiles: new ProfileStore(chromeKV()), settings: new SettingsStore(chromeKV()) }), []);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [editing, setEditing] = useState<Profile | null>(null);
+  const [hint, setHint] = useState<string | undefined>();
+  const [picking, setPicking] = useState(false);
   const refresh = useCallback(async () => setProfiles(await stores.profiles.list()), [stores]);
   useEffect(() => {
     void refresh();
@@ -35,6 +44,9 @@ function ProfilesSection() {
   return (
     <section>
       <h2>Providers</h2>
+      {profiles.length === 0 && !editing && (
+        <p className="muted">Add your first provider to start. Errand works with any OpenAI-compatible API.</p>
+      )}
       <ul className="rows">
         {profiles.map((p) => (
           <li key={p.id}>
@@ -46,7 +58,16 @@ function ProfilesSection() {
               {p.reasoningEffort && <span className="tag">{p.reasoningEffort} reasoning</span>}
             </span>
             <span className="row-actions">
-              <button className="btn" onClick={() => setEditing(p)}>Edit</button>
+              <button
+                className="btn"
+                onClick={() => {
+                  setPicking(false);
+                  setHint(undefined);
+                  setEditing(p);
+                }}
+              >
+                Edit
+              </button>
               <button
                 className="btn ghost danger"
                 onClick={async () => {
@@ -60,11 +81,29 @@ function ProfilesSection() {
           </li>
         ))}
       </ul>
-      <button className="btn" onClick={() => setEditing(newProfile())}>Add provider</button>
+      <button className="btn" aria-expanded={picking} onClick={() => setPicking((v) => !v)}>Add provider</button>
+      {picking && (
+        <div className="presets" role="group" aria-label="Choose a provider">
+          {PROVIDER_PRESETS.map((preset: ProviderPreset) => (
+            <button
+              key={preset.id}
+              className="btn"
+              onClick={() => {
+                setPicking(false);
+                setHint(preset.hint);
+                setEditing(profileFromPreset(preset));
+              }}
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+      )}
       {editing && (
         <ProfileForm
           key={editing.id}
           initial={editing}
+          hint={hint}
           onCancel={() => setEditing(null)}
           onSave={async (p) => {
             await saveProfile(stores.profiles, stores.settings, p);
@@ -77,7 +116,12 @@ function ProfilesSection() {
   );
 }
 
-function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: (p: Profile) => void; onCancel: () => void }) {
+/** Renders `code` spans written in backticks; everything else is plain text. */
+function HintText({ text }: { text: string }) {
+  return <>{text.split('`').map((part, i) => (i % 2 ? <code key={i}>{part}</code> : part))}</>;
+}
+
+function ProfileForm({ initial, hint, onSave, onCancel }: { initial: Profile; hint?: string; onSave: (p: Profile) => void; onCancel: () => void }) {
   const [p, setP] = useState(initial);
   const [errors, setErrors] = useState<string[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -115,6 +159,7 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
       <label>
         Base URL
         <input value={p.baseUrl} placeholder="https://api.example.com/v1" onChange={(e) => set('baseUrl', e.target.value)} />
+        {hint && <span className="hint"><HintText text={hint} /></span>}
       </label>
       <label>API key<input type="password" value={p.apiKey} autoComplete="off" onChange={(e) => set('apiKey', e.target.value)} /></label>
       <label>

@@ -75,3 +75,16 @@ test('files dropped anywhere on the panel are attached', async ({ context, sw, e
   await expect(panel.getByRole('button', { name: 'Remove notes.txt' })).toBeVisible();
   await expect(panel.locator('.dropzone')).toHaveCount(0);
 });
+
+test('Add provider offers presets that pre-fill the form', async ({ context, extensionId }) => {
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options.html`);
+
+  await expect(options.getByText('Add your first provider')).toBeVisible();
+  await options.getByRole('button', { name: 'Add provider' }).click();
+  await options.getByRole('button', { name: 'Ollama (local)' }).click();
+
+  await expect(options.getByLabel('Base URL')).toHaveValue('http://localhost:11434/v1');
+  await expect(options.getByLabel('Name')).toHaveValue('Ollama (local)');
+  await expect(options.getByText('OLLAMA_ORIGINS=chrome-extension://*')).toBeVisible();
+});
