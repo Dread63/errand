@@ -55,7 +55,7 @@ export class AgentTabs {
     const seed = await this.tabs.get(seedTabId);
     this.windowId = seed.windowId;
     this.groupId = await this.tabs.group({ tabIds: [seedTabId] });
-    await this.groups.update(this.groupId, { title: 'Agent', color: 'purple' });
+    await this.groups.update(this.groupId, { title: 'Errand', color: 'purple' });
     this.tabIds.add(seedTabId);
     this.activeId = seedTabId;
     await this.tabs.update(seedTabId, { active: true });

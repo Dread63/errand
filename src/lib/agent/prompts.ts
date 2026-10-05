@@ -42,7 +42,7 @@ Recovering from problems:
 - Do not repeat the same failing action more than twice.
 
 Working with tabs:
-- You control only the tabs in the "Agent" tab group. They are listed with indexes; * marks the active one.
+- You control only the tabs in the "Errand" tab group. They are listed with indexes; * marks the active one.
 - Use new_tab to compare pages side by side, switch_tab to move between them, and close_tab when finished with one.
 - Links that open new tabs switch you to the new tab automatically.
 

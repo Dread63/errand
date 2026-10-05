@@ -1,8 +1,10 @@
 {
-  "name": "browser-control",
-  "description": "Side-panel browsing agent for OpenAI-compatible models",
+  "name": "errand",
+  "description": "An AI agent that browses for you in a side panel. Bring any OpenAI-compatible model: OpenAI, OpenRouter, Ollama and more.",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "license": "AGPL-3.0-only",
+  "repository": "github:Dread63/errand",
   "type": "module",
   "scripts": {
     "dev": "wxt",

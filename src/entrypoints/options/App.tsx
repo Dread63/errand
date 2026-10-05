@@ -15,7 +15,7 @@ export function App() {
   return (
     <main className="options">
       <h1>Settings</h1>
-      <p className="muted">Browser Control</p>
+      <p className="muted">Errand</p>
       <ProfilesSection />
       <SitesSection />
       <GeneralSection />

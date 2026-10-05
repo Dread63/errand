@@ -19,7 +19,7 @@ test('fills a form after site and risky-action approvals, with the overlay visib
 
   await expect(panel.getByText('Saved the form.')).toBeVisible();
   await expect(page.locator('#out')).toHaveText('Saved: Ada');
-  await expect(page.locator('#browser-control-overlay')).toHaveCount(1);
+  await expect(page.locator('#errand-overlay')).toHaveCount(1);
   expect(servers.requests[0].tools).toHaveLength(15);
 });
 
@@ -41,7 +41,7 @@ test('a rejected risky action is not performed', async ({ context, sw, extension
   await expect(page.locator('#out')).toHaveText('');
 });
 
-test('links that open new tabs join the Agent tab group', async ({ context, sw, extensionId, servers }) => {
+test('links that open new tabs join the Errand tab group', async ({ context, sw, extensionId, servers }) => {
   await configure(sw, servers.llmUrl, [servers.siteUrl]);
   servers.setScript([
     { name: 'click', arguments: { id: 1 } },
