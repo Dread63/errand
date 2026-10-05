@@ -1,4 +1,5 @@
 export type ContextMode = 'compact' | 'standard' | 'full';
+export type ReasoningEffort = 'low' | 'medium' | 'high';
 
 export interface Profile {
   id: string;
@@ -10,12 +11,16 @@ export interface Profile {
   contextMode: ContextMode;
   contextWindow: number;
   maxScreenshots: number;
+  /** Sent as reasoning_effort; unset leaves the model's default. On OpenCode Go GLM, low/medium turn thinking off. */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface Settings {
   activeProfileId: string | null;
   stepLimit: number;
   riskyKeywords: string[];
+  /** Log per-phase step timings to the service worker console. */
+  debugTiming: boolean;
 }
 
 export interface Rect {

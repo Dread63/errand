@@ -14,6 +14,8 @@ export type PanelToBg =
 export type BgToPanel =
   | { type: 'conversation'; conversationId: string; turns: Turn[] }
   | { type: 'delta'; text: string }
+  /** The model's thinking, streamed before its answer. */
+  | { type: 'reasoning'; text: string }
   | { type: 'status'; status: 'running' | 'idle' }
   | { type: 'gate'; requestId: string; request: GateRequest }
   | { type: 'gate_closed'; requestId: string }

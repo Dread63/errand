@@ -34,7 +34,8 @@ header { display: flex; gap: 6px; align-items: center; padding: 8px; border-bott
 .msg { padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
 .msg.user { align-self: flex-end; background: var(--accent); color: var(--accent-fg); max-width: 85%; }
 .msg.assistant { background: var(--surface); }
-.msg.thinking { color: var(--muted); font-style: italic; }
+.msg.thinking { color: var(--muted); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; }
+.thinking-label { font-style: normal; font-weight: 600; }
 .att { font-size: 12px; opacity: 0.85; margin-top: 4px; }
 .step { border: 1px solid var(--border); border-radius: 8px; }
 .step-failed { border-color: var(--danger); }

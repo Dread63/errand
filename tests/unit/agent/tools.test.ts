@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeCall, TOOL_NAMES, TOOL_SCHEMAS, validateCall } from '@/lib/agent/tools';
+import { describeCall, TOOL_NAMES, TOOL_SCHEMAS, toolSchemas, validateCall } from '@/lib/agent/tools';
 import { ToolError } from '@/lib/errors';
 import type { ElementInfo, ToolCall } from '@/lib/types';
 
@@ -15,7 +15,39 @@ describe('TOOL_SCHEMAS', () => {
   });
 });
 
+describe('toolSchemas', () => {
+  const props = (vision: boolean, name: string) =>
+    (toolSchemas(vision).find((t) => t.function.name === name)!.function.parameters as { properties: Record<string, unknown>; required: string[] });
+  it('offers x/y only to vision models', () => {
+    expect(props(false, 'click').properties).not.toHaveProperty('x');
+    expect(props(false, 'click').required).toEqual(['id']);
+    expect(props(true, 'click').properties).toHaveProperty('x');
+    expect(props(true, 'click').required).toEqual([]);
+    expect(props(true, 'hover').properties).toHaveProperty('y');
+  });
+  it('type needs only text, so it can type into whatever has focus', () => {
+    expect(props(false, 'type').required).toEqual(['text']);
+  });
+});
+
 describe('validateCall', () => {
+  it('type without an id is allowed', () => {
+    expect(validateCall(c('type', { text: 'Rent\t1200' })).args).toEqual({ text: 'Rent\t1200' });
+  });
+  it('accepts screenshot coordinates from vision models only', () => {
+    expect(validateCall(c('click', { x: '120', y: 45 }), true).args).toEqual({ x: 120, y: 45 });
+    expect(() => validateCall(c('click', { x: 120, y: 45 }))).toThrow('click requires "id".');
+    expect(() => validateCall(c('click', { x: 120 }), true)).toThrow('click needs both "x" and "y".');
+    expect(() => validateCall(c('click', { x: -1, y: 4 }), true)).toThrow(/must not be negative/);
+    expect(() => validateCall(c('hover', {}), true)).toThrow('hover requires "id", or "x" and "y" from the screenshot.');
+  });
+  it('prefers an id over coordinates when both are given', () => {
+    expect(validateCall(c('click', { id: 3, x: 1, y: 2 }), true).args).toEqual({ id: 3 });
+  });
+  it('clamps key repeat to 1..50', () => {
+    expect(validateCall(c('key', { combo: 'Tab', repeat: 500 })).args.repeat).toBe(50);
+    expect(validateCall(c('key', { combo: 'Tab', repeat: 0 })).args.repeat).toBe(1);
+  });
   it('coerces numeric strings and bracketed ids from small models', () => {
     expect(validateCall(c('click', { id: '12' })).args).toEqual({ id: 12 });
     expect(validateCall(c('click', { id: '[7]' })).args).toEqual({ id: 7 });
@@ -51,6 +83,14 @@ describe('describeCall', () => {
       'Click button "Add to cart"',
     );
     expect(describeCall(c('click', { id: 3 }))).toBe('Click element [3]');
+  });
+  it('describes coordinate, focused-element and repeated actions', () => {
+    expect(describeCall(c('click', { x: 120, y: 45 }))).toBe('Click the page at (120, 45)');
+    expect(describeCall(c('click', { x: 120, y: 45 }), { tabId: 1, origin: 'o', element: field({ role: 'gridcell', name: 'A1' }) })).toBe(
+      'Click gridcell "A1" at (120, 45)',
+    );
+    expect(describeCall(c('type', { text: 'Rent\t1200\nFood' }))).toBe('Type "Rent⇥1200⏎Food" into the focused element');
+    expect(describeCall(c('key', { combo: 'Tab', repeat: 3 }))).toBe('Press Tab ×3');
   });
   it('masks text typed into sensitive fields', () => {
     expect(describeCall(c('type', { id: 3, text: 'hunter2' }), { tabId: 1, origin: 'o', element: field({ type: 'password' }) })).toBe(

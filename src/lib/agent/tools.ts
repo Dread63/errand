@@ -12,6 +12,8 @@ const COMMON: Record<string, Prop> = {
   risky: { type: 'boolean', description: 'Set true if this action is irreversible, spends money, sends data or deletes something.' },
 };
 const ID: Prop = { type: 'integer', description: 'Element id from the latest page state' };
+const X: Prop = { type: 'integer', description: 'Screenshot x coordinate in pixels; use instead of id for things with no id' };
+const Y: Prop = { type: 'integer', description: 'Screenshot y coordinate in pixels' };
 
 function tool(name: string, description: string, properties: Record<string, Prop>, required: string[] = []): ToolSchema {
   return {
@@ -20,36 +22,50 @@ function tool(name: string, description: string, properties: Record<string, Prop
   };
 }
 
-export const TOOL_SCHEMAS: ToolSchema[] = [
-  tool('click', 'Click an element.', { id: ID }, ['id']),
-  tool(
-    'type',
-    'Click a text field and type into it. Replaces existing text unless clear is false.',
-    {
+/** Coordinates are offered only to models that see the screenshot. */
+export function toolSchemas(vision: boolean): ToolSchema[] {
+  const at: Record<string, Prop> = vision ? { x: X, y: Y } : {};
+  const target = vision ? ' Pass id, or x and y for something visible in the screenshot that has no id.' : '';
+  return [
+    tool('click', `Click an element.${target}`, { id: ID, ...at }, vision ? [] : ['id']),
+    tool(
+      'type',
+      `Type text. With id${vision ? ' (or x and y)' : ''}, clicks that spot first; without, types into whatever has focus (e.g. a selected spreadsheet cell). In text, a tab character (\\t) presses Tab and a newline (\\n) presses Enter, so a whole row or table can be entered in one call.`,
+      {
+        id: ID,
+        ...at,
+        text: { type: 'string' },
+        submit: { type: 'boolean', description: 'Press Enter after typing' },
+        clear: { type: 'boolean', description: 'Select all and delete existing text first (default: true with id, false otherwise)' },
+      },
+      ['text'],
+    ),
+    tool('select', 'Choose an option in a dropdown (<select>) by its visible text or value.', { id: ID, value: { type: 'string' } }, ['id', 'value']),
+    tool('scroll', 'Scroll the page up or down, or scroll an element into view.', {
+      direction: { type: 'string', enum: ['up', 'down'] },
       id: ID,
-      text: { type: 'string' },
-      submit: { type: 'boolean', description: 'Press Enter after typing' },
-      clear: { type: 'boolean', description: 'Clear existing text first (default true)' },
-    },
-    ['id', 'text'],
-  ),
-  tool('select', 'Choose an option in a dropdown (<select>) by its visible text or value.', { id: ID, value: { type: 'string' } }, ['id', 'value']),
-  tool('scroll', 'Scroll the page up or down, or scroll an element into view.', {
-    direction: { type: 'string', enum: ['up', 'down'] },
-    id: ID,
-  }),
-  tool('hover', 'Move the mouse over an element (e.g. to open a menu).', { id: ID }, ['id']),
-  tool('key', 'Press a key or combination, e.g. "Enter", "Escape", "Control+a", "ArrowDown".', { combo: { type: 'string' } }, ['combo']),
-  tool('navigate', 'Go to a URL in the current tab.', { url: { type: 'string' } }, ['url']),
-  tool('back', 'Go back to the previous page.', {}),
-  tool('wait', 'Wait for the page to update (max 10000 ms).', { ms: { type: 'integer' } }, ['ms']),
-  tool('read_text', 'Read the text content of the current page.', {}),
-  tool('new_tab', 'Open a URL in a new agent tab and switch to it.', { url: { type: 'string' } }, ['url']),
-  tool('switch_tab', 'Switch to another agent tab by index.', { index: { type: 'integer' } }, ['index']),
-  tool('close_tab', 'Close an agent tab by index.', { index: { type: 'integer' } }, ['index']),
-  tool('ask_user', 'Ask the user a question and wait for the answer.', { question: { type: 'string' } }, ['question']),
-  tool('done', 'Finish the task with a summary for the user.', { summary: { type: 'string' } }, ['summary']),
-];
+    }),
+    tool('hover', `Move the mouse over an element (e.g. to open a menu).${target}`, { id: ID, ...at }, vision ? [] : ['id']),
+    tool(
+      'key',
+      'Press a key or combination, e.g. "Enter", "Escape", "Control+a", "ArrowDown", "+". To enter text use type instead.',
+      { combo: { type: 'string' }, repeat: { type: 'integer', description: 'Press it this many times (default 1, max 50)' } },
+      ['combo'],
+    ),
+    tool('navigate', 'Go to a URL in the current tab.', { url: { type: 'string' } }, ['url']),
+    tool('back', 'Go back to the previous page.', {}),
+    tool('wait', 'Wait for the page to update (max 10000 ms).', { ms: { type: 'integer' } }, ['ms']),
+    tool('read_text', 'Read the text content of the current page.', {}),
+    tool('new_tab', 'Open a URL in a new agent tab and switch to it.', { url: { type: 'string' } }, ['url']),
+    tool('switch_tab', 'Switch to another agent tab by index.', { index: { type: 'integer' } }, ['index']),
+    tool('close_tab', 'Close an agent tab by index.', { index: { type: 'integer' } }, ['index']),
+    tool('ask_user', 'Ask the user a question and wait for the answer.', { question: { type: 'string' } }, ['question']),
+    tool('done', 'Finish the task with a summary for the user.', { summary: { type: 'string' } }, ['summary']),
+  ];
+}
+
+export const TOOL_SCHEMAS: ToolSchema[] = toolSchemas(false);
+const VISION_SCHEMAS: ToolSchema[] = toolSchemas(true);
 
 export const TOOL_NAMES = TOOL_SCHEMAS.map((t) => t.function.name);
 
@@ -82,8 +98,9 @@ function checkUrl(input: string): string {
   return u.toString();
 }
 
-export function validateCall(call: ToolCall): ToolCall {
-  const schema = TOOL_SCHEMAS.find((t) => t.function.name === call.name);
+/** Checks a call against the tools the model was offered; x/y are only accepted from vision models. */
+export function validateCall(call: ToolCall, vision = false): ToolCall {
+  const schema = (vision ? VISION_SCHEMAS : TOOL_SCHEMAS).find((t) => t.function.name === call.name);
   if (!schema) throw new ToolError(`Unknown tool "${call.name}". Available tools: ${TOOL_NAMES.join(', ')}.`);
   const params = schema.function.parameters as { properties: Record<string, Prop>; required: string[] };
   const args: Record<string, unknown> = {};
@@ -99,6 +116,19 @@ export function validateCall(call: ToolCall): ToolCall {
   if (call.name === 'scroll' && args.id === undefined && args.direction === undefined) {
     throw new ToolError('scroll requires "direction" or "id".');
   }
+  if ((args.x === undefined) !== (args.y === undefined)) throw new ToolError(`${call.name} needs both "x" and "y".`);
+  if (args.x !== undefined) {
+    if ((args.x as number) < 0 || (args.y as number) < 0) throw new ToolError('"x" and "y" must not be negative.');
+    // An id is the more precise target; drop coordinates rather than guess which one was meant.
+    if (args.id !== undefined) {
+      delete args.x;
+      delete args.y;
+    }
+  }
+  if ((call.name === 'click' || call.name === 'hover') && args.id === undefined && args.x === undefined) {
+    throw new ToolError(`${call.name} requires "id", or "x" and "y" from the screenshot.`);
+  }
+  if (call.name === 'key' && args.repeat !== undefined) args.repeat = Math.min(Math.max(args.repeat as number, 1), 50);
   if (call.name === 'wait') args.ms = Math.min(Math.max(args.ms as number, 0), 10_000);
   if (call.name === 'navigate' || call.name === 'new_tab') args.url = checkUrl(String(args.url));
   return { id: call.id, name: call.name, args };
@@ -107,14 +137,16 @@ export function validateCall(call: ToolCall): ToolCall {
 export function describeCall(call: ToolCall, target?: ActionTarget): string {
   const el = target?.element;
   const a = call.args;
-  const what = el ? `${el.role} "${clip(el.name || el.tag, 60)}"` : a.id !== undefined ? `element [${a.id}]` : '';
+  const at = a.x !== undefined ? ` at (${a.x}, ${a.y})` : '';
+  const what =
+    (el ? `${el.role} "${clip(el.name || el.tag, 60)}"` : a.id !== undefined ? `element [${a.id}]` : a.x !== undefined ? 'the page' : 'the focused element') + at;
   switch (call.name) {
     case 'click':
       return `Click ${what}`;
     case 'hover':
       return `Hover over ${what}`;
     case 'type': {
-      const text = el && isSensitiveField(el) ? '••••••' : clip(String(a.text), 80);
+      const text = el && isSensitiveField(el) ? '••••••' : clip(String(a.text).replace(/\t/g, '⇥').replace(/\n/g, '⏎'), 80);
       return `Type "${text}" into ${what}${a.submit ? ' and press Enter' : ''}`;
     }
     case 'select':
@@ -122,7 +154,7 @@ export function describeCall(call: ToolCall, target?: ActionTarget): string {
     case 'scroll':
       return what ? `Scroll to ${what}` : `Scroll ${a.direction}`;
     case 'key':
-      return `Press ${a.combo}`;
+      return `Press ${a.combo}${typeof a.repeat === 'number' && a.repeat > 1 ? ` ×${a.repeat}` : ''}`;
     case 'navigate':
       return `Go to ${a.url}`;
     case 'back':

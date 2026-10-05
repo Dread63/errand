@@ -42,7 +42,7 @@ export function App() {
         />
       ) : (
         <>
-          <ChatView turns={state.turns} streaming={state.streaming} running={state.running} />
+          <ChatView turns={state.turns} streaming={state.streaming} reasoning={state.reasoning} running={state.running} />
           <div className="gates">
             {state.gates.map((g) => (
               <GateCard key={g.requestId} gate={g} onAnswer={(value) => send({ type: 'gate', requestId: g.requestId, value })} />

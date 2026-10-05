@@ -34,7 +34,7 @@ function ProfilesSection() {
         {profiles.map((p) => (
           <li key={p.id}>
             <span>
-              <strong>{p.name}</strong> — {p.model || 'no model'} <small>({p.contextMode}{p.supportsVision ? ', vision' : ''})</small>
+              <strong>{p.name}</strong> — {p.model || 'no model'} <small>({p.contextMode}{p.supportsVision ? ', vision' : ''}{p.reasoningEffort ? `, ${p.reasoningEffort} reasoning` : ''})</small>
             </span>
             <span className="row-actions">
               <button onClick={() => setEditing(p)}>Edit</button>
@@ -117,6 +117,15 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
       </label>
       <label>Context window (tokens)<input type="number" value={p.contextWindow} onChange={(e) => set('contextWindow', Number(e.target.value))} /></label>
       <label>
+        Reasoning effort
+        <select value={p.reasoningEffort ?? ''} onChange={(e) => set('reasoningEffort', (e.target.value || undefined) as Profile['reasoningEffort'])}>
+          <option value="">Model default</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low — fastest</option>
+        </select>
+      </label>
+      <label>
         Screenshots kept (Full mode)
         <input type="number" min={1} max={10} value={p.maxScreenshots} onChange={(e) => set('maxScreenshots', Number(e.target.value))} />
       </label>
@@ -165,17 +174,19 @@ function GeneralSection() {
   const store = useMemo(() => new SettingsStore(chromeKV()), []);
   const [stepLimit, setStepLimit] = useState(30);
   const [keywords, setKeywords] = useState('');
+  const [debugTiming, setDebugTiming] = useState(false);
   const [saved, setSaved] = useState('');
   useEffect(() => {
     void store.get().then((s) => {
       setStepLimit(s.stepLimit);
       setKeywords(s.riskyKeywords.join(', '));
+      setDebugTiming(s.debugTiming);
     });
   }, [store]);
 
   async function save() {
     const limit = Math.max(1, Math.min(200, Math.round(stepLimit)));
-    await store.update({ stepLimit: limit, riskyKeywords: parseKeywords(keywords) });
+    await store.update({ stepLimit: limit, riskyKeywords: parseKeywords(keywords), debugTiming });
     setStepLimit(limit);
     setSaved('Saved.');
   }
@@ -187,6 +198,9 @@ function GeneralSection() {
       <label>
         Words that make a click need approval (comma or newline separated)
         <textarea rows={4} value={keywords} onChange={(e) => setKeywords(e.target.value)} />
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={debugTiming} onChange={(e) => setDebugTiming(e.target.checked)} /> Log step timings to the service worker console
       </label>
       <div className="actions">
         <button className="primary" onClick={() => void save()}>Save</button>

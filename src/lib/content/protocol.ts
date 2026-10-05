@@ -5,6 +5,8 @@ export type ContentRequest =
   | { type: 'snapshot'; mode: ContextMode }
   | { type: 'resolve'; id: number; scroll: boolean }
   | { type: 'focused' }
+  /** Describes what is drawn at a viewport point (for coordinate actions). */
+  | { type: 'pointInfo'; x: number; y: number }
   | { type: 'readText'; maxChars: number }
   | { type: 'select'; id: number; value: string }
   /** Suspend (on) or restore (off) other extensions' frames, which block the debugger. */

@@ -49,6 +49,9 @@ describe('classifyRisk', () => {
     expect(risk(call('type', { id: 1, text: 'q', submit: true }), el({ tag: 'input', inForm: true })).risky).toBe(true);
     expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', inForm: true })).risky).toBe(true);
     expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', inForm: false })).risky).toBe(false);
+    // A newline in typed text presses Enter too.
+    expect(risk(call('type', { id: 1, text: 'a\nb' }), el({ tag: 'input', inForm: true })).reasons).toEqual(['Pressing Enter inside a form']);
+    expect(risk(call('type', { text: 'a\tb' }), el({ tag: 'input', inForm: true })).risky).toBe(false);
   });
   it('flags downloads and file uploads', () => {
     expect(risk(call('click'), el({ tag: 'a', role: 'link', name: 'Get', href: 'https://a.test/app.dmg' })).risky).toBe(true);

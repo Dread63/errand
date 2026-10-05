@@ -4,8 +4,10 @@ import type { ContentRequest, ResolveResult } from '../content/protocol';
 import { ToolError } from '../errors';
 import type { ActionTarget, ContextMode, ElementInfo, Observation, PageSnapshot, TabInfo, ToolCall } from '../types';
 import { isWebUrl, originOf } from '../url';
+import { timed } from '../timing';
 import { clip, sleep } from '../util';
 import type { Cdp } from './cdp';
+import { fitScreenshot } from './image';
 import type { ContentMessenger } from './messenger';
 import type { AgentTabs } from './tabs';
 
@@ -14,8 +16,10 @@ export type CdpLike = Pick<Cdp, 'setConflictHandler' | 'ensure' | 'move' | 'clic
 export type MessengerLike = Pick<ContentMessenger, 'ensureInjected' | 'send'>;
 
 const ELEMENT_TOOLS = new Set(['click', 'type', 'select', 'hover']);
+const POINT_TOOLS = new Set(['click', 'type', 'hover']);
 
-const label = (t: ActionTarget) => (t.element ? `${t.element.role} "${clip(t.element.name || t.element.tag, 60)}"` : 'the element');
+const label = (t: ActionTarget) =>
+  t.element ? `${t.element.role} "${clip(t.element.name || t.element.tag, 60)}"` : t.point ? `(${t.point.x}, ${t.point.y})` : 'the focused element';
 
 export class ChromeDriver implements BrowserDriver {
   private viewport = { w: 1280, h: 800 };
@@ -24,13 +28,20 @@ export class ChromeDriver implements BrowserDriver {
   private scrollStepMs: number;
   private isMac: boolean;
   private settleMs: number;
+  private fitImage: (dataUrl: string, w: number, h: number) => Promise<string>;
 
   constructor(
     private tabs: TabsLike,
     private cdp: CdpLike,
     private content: MessengerLike,
-    opts: { isMac?: boolean; settleMs?: number; scrollStepMs?: number } = {},
+    opts: {
+      isMac?: boolean;
+      settleMs?: number;
+      scrollStepMs?: number;
+      fitImage?: (dataUrl: string, w: number, h: number) => Promise<string>;
+    } = {},
   ) {
+    this.fitImage = opts.fitImage ?? fitScreenshot;
     this.isMac = opts.isMac ?? /Mac/.test(globalThis.navigator?.userAgent ?? '');
     this.settleMs = opts.settleMs ?? 300;
     this.scrollStepMs = opts.scrollStepMs ?? 30;
@@ -73,7 +84,7 @@ export class ChromeDriver implements BrowserDriver {
 
   async observe({ mode, screenshot }: { mode: ContextMode; screenshot: boolean }): Promise<Observation> {
     const first = await this.tabs.active();
-    await this.tabs.waitForLoad(first.id!);
+    await timed('observe: waitForLoad', () => this.tabs.waitForLoad(first.id!));
     const tab = await this.tabs.active();
     const tabId = tab.id!;
     const url = tab.url ?? '';
@@ -91,13 +102,18 @@ export class ChromeDriver implements BrowserDriver {
       };
       return { snapshot, tabs };
     }
-    await this.content.ensureInjected(tabId);
-    await this.suspendForeignFrames(tabId);
-    await this.cdp.ensure(tabId);
-    await this.content.send(tabId, { type: 'overlay', op: 'active', on: true });
-    const snapshot = await this.content.send<PageSnapshot>(tabId, { type: 'snapshot', mode });
+    await timed('observe: inject content script', () => this.content.ensureInjected(tabId));
+    await timed('observe: guard foreign frames', () => this.suspendForeignFrames(tabId));
+    await timed('observe: attach debugger', () => this.cdp.ensure(tabId));
+    await timed('observe: show overlay', () => this.content.send(tabId, { type: 'overlay', op: 'active', on: true }));
+    const snapshot = await timed('observe: snapshot', () => this.content.send<PageSnapshot>(tabId, { type: 'snapshot', mode }));
     this.viewport = snapshot.viewport;
-    const shot = screenshot ? await this.cdp.screenshot(tabId) : undefined;
+    const shot = screenshot
+      ? await timed('observe: screenshot', async () => {
+          const raw = await this.cdp.screenshot(tabId);
+          return this.fitImage(raw, snapshot.viewport.w, snapshot.viewport.h).catch(() => raw);
+        })
+      : undefined;
     return shot ? { snapshot, tabs, screenshot: shot } : { snapshot, tabs };
   }
 
@@ -112,12 +128,14 @@ export class ChromeDriver implements BrowserDriver {
     const tabId = tab.id!;
     const url = tab.url ?? '';
     const origin = originOf(url);
-    const needsPage = ELEMENT_TOOLS.has(call.name) || (call.name === 'scroll' && call.args.id !== undefined) || call.name === 'read_text';
+    const byId = call.args.id !== undefined && (ELEMENT_TOOLS.has(call.name) || call.name === 'scroll');
+    const byPoint = !byId && call.args.x !== undefined && POINT_TOOLS.has(call.name);
+    const needsPage = byId || byPoint || call.name === 'type' || call.name === 'read_text';
     if (needsPage && !isWebUrl(url)) throw new ToolError('This page cannot be controlled. Use navigate or new_tab to go to a website.');
-    if (ELEMENT_TOOLS.has(call.name) || (call.name === 'scroll' && call.args.id !== undefined)) {
-      return this.resolve(tabId, origin, Number(call.args.id));
-    }
+    if (byId) return this.resolve(tabId, origin, Number(call.args.id));
+    if (byPoint) return this.at(tabId, origin, Number(call.args.x), Number(call.args.y));
     switch (call.name) {
+      case 'type':
       case 'key': {
         const focused = isWebUrl(url) ? await this.content.send<ElementInfo | null>(tabId, { type: 'focused' }).catch(() => null) : null;
         return focused ? { tabId, origin, element: focused } : { tabId, origin };
@@ -135,6 +153,22 @@ export class ChromeDriver implements BrowserDriver {
     }
   }
 
+  private async at(tabId: number, origin: string, x: number, y: number): Promise<ActionTarget> {
+    const { w, h } = this.viewport;
+    if (x >= w || y >= h) throw new ToolError(`(${x}, ${y}) is outside the ${w}×${h} screenshot.`);
+    const element = await this.content.send<ElementInfo | null>(tabId, { type: 'pointInfo', x, y }).catch(() => null);
+    return element ? { tabId, origin, element, point: { x, y } } : { tabId, origin, point: { x, y } };
+  }
+
+  /** Inserts text; tab characters press Tab and newlines press Enter (moving between cells or fields). */
+  private async typeText(tabId: number, text: string): Promise<void> {
+    for (const part of text.replace(/\r\n?/g, '\n').split(/([\t\n])/)) {
+      if (part === '\t') await this.cdp.key(tabId, 'Tab');
+      else if (part === '\n') await this.cdp.key(tabId, 'Enter');
+      else if (part) await this.cdp.insertText(tabId, part);
+    }
+  }
+
   private async overlay(tabId: number, req: ContentRequest): Promise<void> {
     await this.content.send(tabId, req).catch(() => {}); // visuals are best-effort
   }
@@ -146,7 +180,7 @@ export class ChromeDriver implements BrowserDriver {
   }
 
   private async pointTo(t: ActionTarget): Promise<{ x: number; y: number }> {
-    if (!t.point) throw new ToolError('This action needs an element id.');
+    if (!t.point) throw new ToolError('This action needs an element id or x and y.');
     await this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y });
     await this.overlay(t.tabId, { type: 'overlay', op: 'hover', rect: t.element?.rect ?? null });
     this.ringShown = true;
@@ -164,7 +198,7 @@ export class ChromeDriver implements BrowserDriver {
 
   private async settle(tabId: number): Promise<void> {
     await sleep(this.settleMs);
-    await this.tabs.waitForLoad(tabId).catch(() => {});
+    await timed('settle: waitForLoad', () => this.tabs.waitForLoad(tabId)).catch(() => {});
   }
 
   async perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
@@ -195,17 +229,19 @@ export class ChromeDriver implements BrowserDriver {
         return `Hovering over ${label(target)}.`;
       }
       case 'type': {
-        const p = await this.pointTo(target);
-        await this.cdp.click(tabId, p.x, p.y);
-        if (a.clear !== false) {
+        if (target.point) {
+          const p = await this.pointTo(target);
+          await this.cdp.click(tabId, p.x, p.y);
+        }
+        // Select-all is only safe in a real text field; in a spreadsheet it would select every cell.
+        if (a.clear === true || (a.id !== undefined && a.clear !== false)) {
           await this.cdp.key(tabId, this.isMac ? 'Meta+a' : 'Control+a');
           await this.cdp.key(tabId, 'Backspace');
         }
-        await this.cdp.insertText(tabId, String(a.text));
-        if (a.submit === true) {
-          await this.cdp.key(tabId, 'Enter');
-          await this.settle(tabId);
-        }
+        const text = String(a.text);
+        await this.typeText(tabId, text);
+        if (a.submit === true) await this.cdp.key(tabId, 'Enter');
+        if (a.submit === true || /[\r\n]/.test(text)) await this.settle(tabId);
         return `Typed into ${label(target)}${a.submit === true ? ' and pressed Enter' : ''}.`;
       }
       case 'select': {
@@ -224,7 +260,8 @@ export class ChromeDriver implements BrowserDriver {
       case 'key': {
         const r = target.element?.rect;
         if (r) await this.pointTo({ ...target, point: { x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) } });
-        await this.cdp.key(tabId, String(a.combo));
+        const times = typeof a.repeat === 'number' ? a.repeat : 1;
+        for (let i = 0; i < times; i++) await this.cdp.key(tabId, String(a.combo));
         await this.settle(tabId);
         // Keys like Tab move focus; let the cursor follow so keyboard navigation is visible.
         const focused = await this.content.send<ElementInfo | null>(tabId, { type: 'focused' }).catch(() => null);
@@ -232,7 +269,7 @@ export class ChromeDriver implements BrowserDriver {
           const fr = focused.rect;
           await this.overlay(tabId, { type: 'overlay', op: 'move', x: Math.round(fr.x + fr.w / 2), y: Math.round(fr.y + fr.h / 2) });
         }
-        return `Pressed ${a.combo}.`;
+        return `Pressed ${a.combo}${times > 1 ? ` ${times} times` : ''}.`;
       }
       case 'navigate':
         await this.tabs.navigate(String(a.url));

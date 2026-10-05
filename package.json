@@ -12,7 +12,8 @@
     "postinstall": "wxt prepare",
     "test": "vitest run",
     "test:e2e": "wxt build && playwright test",
-    "test:live": "vitest run --config tests/live/vitest.config.ts"
+    "test:live": "vitest run --config tests/live/vitest.config.ts",
+    "test:live:e2e": "wxt build && playwright test -c playwright.live.config.ts"
   },
   "dependencies": {
     "pdfjs-dist": "^6.4.299",

@@ -16,6 +16,22 @@ describe('parseCombo', () => {
     expect(parseCombo('Meta+a')).toMatchObject({ modifiers: 4, commands: ['selectAll'] });
     expect(parseCombo('5')).toMatchObject({ code: 'Digit5', text: '5' });
   });
+  it('treats a trailing "+" as the plus key, typed with Shift like on a keyboard', () => {
+    expect(parseCombo('+')).toEqual({ key: '+', code: 'Equal', keyCode: 187, modifiers: 8, text: '+' });
+    expect(parseCombo('Shift++')).toMatchObject({ key: '+', modifiers: 8, text: '+' });
+    expect(parseCombo('Control++')).toMatchObject({ key: '+', code: 'Equal', modifiers: 2 | 8 });
+    expect(parseCombo('Control++').text).toBeUndefined();
+  });
+  it('Shift turns digits and punctuation into their shifted symbols', () => {
+    expect(parseCombo('Shift+=')).toMatchObject({ key: '+', code: 'Equal', text: '+' });
+    expect(parseCombo('Shift+1')).toMatchObject({ key: '!', code: 'Digit1', text: '!' });
+    expect(parseCombo('=')).toEqual({ key: '=', code: 'Equal', keyCode: 187, modifiers: 0, text: '=' });
+    expect(parseCombo('(')).toMatchObject({ key: '(', code: 'Digit9', modifiers: 8, text: '(' });
+    expect(parseCombo(':')).toMatchObject({ key: ':', code: 'Semicolon', modifiers: 8 });
+  });
+  it('an uppercase letter alone is typed with Shift', () => {
+    expect(parseCombo('X')).toEqual({ key: 'X', code: 'KeyX', keyCode: 88, modifiers: 8, text: 'X' });
+  });
   it('rejects unknown keys and modifiers', () => {
     expect(() => parseCombo('Hyper+a')).toThrow(ToolError);
     expect(() => parseCombo('F13')).toThrow('Unknown key "F13".');

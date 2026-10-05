@@ -27,7 +27,8 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
   const e = target.element;
   if (e) {
     if (call.name === 'type' && isSensitiveField(e)) reasons.push('Typing into a password, payment or one-time-code field');
-    if (call.name === 'type' && call.args.submit === true && e.inForm) reasons.push('Pressing Enter inside a form');
+    const typesEnter = call.args.submit === true || /[\r\n]/.test(String(call.args.text ?? ''));
+    if (call.name === 'type' && typesEnter && e.inForm) reasons.push('Pressing Enter inside a form');
     if (call.name === 'key' && isEnter(call.args.combo) && e.inForm) reasons.push('Pressing Enter inside a form');
     if (call.name === 'click') {
       if (e.isSubmit) reasons.push('Clicking a submit button');

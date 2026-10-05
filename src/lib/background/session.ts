@@ -8,6 +8,7 @@ import type { ProfileStore } from '../storage/profiles';
 import type { SettingsStore } from '../storage/settings';
 import type { SitePermissionStore } from '../storage/sites';
 import type { Conversation, Profile } from '../types';
+import { setTimingEnabled, timed } from '../timing';
 import { errMsg } from '../util';
 
 export interface DriverHandle extends BrowserDriver {
@@ -132,6 +133,7 @@ export class PanelSession {
 
   private async run(msg: Extract<PanelToBg, { type: 'start' }>): Promise<void> {
     const settings = await this.deps.settings.get();
+    setTimingEnabled(settings.debugTiming);
     const profile = settings.activeProfileId ? await this.deps.profiles.get(settings.activeProfileId) : undefined;
     if (!profile) {
       this.post({ type: 'error', message: 'No model profile selected. Choose one in the panel header or add one in Settings.' });
@@ -166,7 +168,7 @@ export class PanelSession {
 
     const driver = this.deps.makeDriver();
     try {
-      await driver.start(msg.tabId);
+      await timed('session: start driver', () => driver.start(msg.tabId));
       conv.turns = await runAgent(conv.turns, {
         llm: this.deps.makeLlm(profile),
         driver,
@@ -183,6 +185,7 @@ export class PanelSession {
             this.post({ type: 'conversation', conversationId: conv.id, turns });
           },
           onDelta: (text) => this.post({ type: 'delta', text }),
+          onReasoning: (text) => this.post({ type: 'reasoning', text }),
         },
       });
     } catch (e) {

@@ -4,13 +4,14 @@ import type { ChatMessage, ChatResult } from '../llm/types';
 import { classifyRisk, isSensitiveField } from '../policy/risky';
 import type { SitePolicy } from '../policy/sites';
 import type { ActionTarget, ObservationRecord, Profile, Settings, StepTurn, ToolCall, Turn } from '../types';
+import { logTiming, timed } from '../timing';
 import { originOf } from '../url';
 import { errMsg } from '../util';
 import { buildMessages } from './context';
 import type { AgentHooks, BrowserDriver, UserGate } from './ports';
 import { renderSnapshot } from './render';
 import { estimateTokens } from './tokens';
-import { describeCall, TOOL_SCHEMAS, validateCall } from './tools';
+import { describeCall, toolSchemas, validateCall } from './tools';
 
 export interface AgentDeps {
   llm: LlmClient;
@@ -28,6 +29,9 @@ export interface AgentDeps {
 
 /** Ends the task with a message for the user. */
 class StopTask extends Error {}
+
+const NUDGE =
+  'You replied without calling a tool, so nothing happened. If the task is finished, call done with your answer; otherwise call the next tool.';
 
 async function ensureSite(d: AgentDeps, origin: string): Promise<boolean> {
   const status = await d.sites.check(origin);
@@ -81,7 +85,7 @@ async function observe(d: AgentDeps): Promise<ObservationRecord> {
       tabs: '',
     };
   }
-  const r = renderSnapshot(o.snapshot, o.tabs, mode);
+  const r = renderSnapshot(o.snapshot, o.tabs, mode, !!o.screenshot);
   const record: ObservationRecord = { url: o.snapshot.url, title: o.snapshot.title, summary: r.summary, detail: r.detail, tabs: r.tabs };
   if (o.screenshot) record.screenshot = o.screenshot;
   return record;
@@ -92,9 +96,10 @@ async function callModel(d: AgentDeps, messages: ChatMessage[]): Promise<ChatRes
     try {
       return await d.llm.chat({
         messages,
-        tools: TOOL_SCHEMAS,
+        tools: toolSchemas(d.profile.supportsVision),
         signal: d.signal,
         onDelta: (t) => d.hooks.onDelta(t),
+        onReasoning: (t) => d.hooks.onReasoning?.(t),
         ...(d.sessionId ? { sessionId: d.sessionId } : {}),
       });
     } catch (e) {
@@ -150,22 +155,42 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
   const limit = d.settings.stepLimit;
   let malformed = 0;
   let calibration = 1;
+  let acted = false;
+  /** Set after a mid-task plain-text reply: shown to the model once on the next request. */
+  let nudge: ChatMessage[] | null = null;
+  let nudged = false;
 
   try {
     for (let n = 0; n < limit; n++) {
       if (d.signal.aborted) throw new StopTask('Stopped.');
-      const observation = await guarded(d, () => observe(d));
+      const stepStart = performance.now();
+      const observation = await timed(`step ${n + 1}: observe (total)`, () => guarded(d, () => observe(d)));
       const messages = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
-      const result = await callModel(d, messages);
+      if (nudge) messages.push(...nudge);
+      nudge = null;
+      const result = await timed(`step ${n + 1}: model (total, ~${estimateTokens(messages)} prompt tokens est.)`, () => callModel(d, messages));
+      logTiming(`step ${n + 1}: until model reply`, performance.now() - stepStart);
       if (result.usage?.promptTokens) {
         calibration = Math.min(3, Math.max(0.5, result.usage.promptTokens / estimateTokens(messages)));
       }
 
       const raw = result.toolCalls[0];
       if (!raw) {
-        push({ kind: 'assistant', text: result.content.trim() || '(The model returned an empty reply.)' });
+        const text = result.content.trim();
+        // Mid-task, a reply without a tool call is usually narration ("Let me check…"), not the
+        // answer. Ask once for a tool call; a second plain reply is taken as the final answer.
+        if (acted && !nudged && n + 1 < limit) {
+          nudged = true;
+          nudge = [
+            { role: 'assistant', content: text || '(empty reply)' },
+            { role: 'user', content: NUDGE },
+          ];
+          continue;
+        }
+        push({ kind: 'assistant', text: text || '(The model returned an empty reply.)' });
         return turns;
       }
+      nudged = false;
 
       const id = newId();
       const step: StepTurn = {
@@ -182,7 +207,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
       let call: ToolCall;
       try {
         if (raw.error) throw new ToolError(raw.error);
-        call = validateCall(step.call);
+        call = validateCall(step.call, d.profile.supportsVision);
         step.call = call;
         step.label = describeCall(call);
         malformed = 0;
@@ -216,7 +241,8 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
         continue;
       }
 
-      step.result = await guarded(d, () => act(d, call, step));
+      step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step)));
+      acted = true;
       push(step);
     }
     push({ kind: 'assistant', text: `Stopped: reached the step limit of ${limit} steps.` });

@@ -10,6 +10,7 @@ export interface PanelState {
   conversationId: string | null;
   turns: Turn[];
   streaming: string;
+  reasoning: string;
   running: boolean;
   gates: PendingGate[];
   error: string | null;
@@ -26,6 +27,7 @@ export const initialPanelState: PanelState = {
   conversationId: null,
   turns: [],
   streaming: '',
+  reasoning: '',
   running: false,
   gates: [],
   error: null,
@@ -34,11 +36,13 @@ export const initialPanelState: PanelState = {
 export function panelReducer(s: PanelState, a: PanelAction): PanelState {
   switch (a.type) {
     case 'conversation':
-      return { ...s, conversationId: a.conversationId, turns: a.turns, streaming: '' };
+      return { ...s, conversationId: a.conversationId, turns: a.turns, streaming: '', reasoning: '' };
     case 'delta':
       return { ...s, streaming: s.streaming + a.text };
+    case 'reasoning':
+      return { ...s, reasoning: s.reasoning + a.text };
     case 'status':
-      return a.status === 'running' ? { ...s, running: true, error: null } : { ...s, running: false, streaming: '', gates: [] };
+      return a.status === 'running' ? { ...s, running: true, error: null } : { ...s, running: false, streaming: '', reasoning: '', gates: [] };
     case 'gate':
       return { ...s, gates: [...s.gates, { requestId: a.requestId, request: a.request }] };
     case 'gate_closed':
