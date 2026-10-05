@@ -88,3 +88,21 @@ test('Add provider offers presets that pre-fill the form', async ({ context, ext
   await expect(options.getByLabel('Name')).toHaveValue('Ollama (local)');
   await expect(options.getByText('OLLAMA_ORIGINS=chrome-extension://*')).toBeVisible();
 });
+
+test('fresh install asks to connect a model, then gets out of the way', async ({ context, sw, extensionId, servers }) => {
+  const page = await context.newPage();
+  await page.goto(`${servers.siteUrl}/form.html`);
+  const panel = await openPanel(context, sw, extensionId, await tabIdFor(sw, page.url()));
+
+  await expect(panel.getByText('Connect a model to get started')).toBeVisible();
+  await panel.getByTestId('composer-input').fill('Do something');
+  await expect(panel.getByTestId('composer-send')).toBeDisabled();
+
+  const optionsPage = context.waitForEvent('page', (p) => p.url().includes('options.html'));
+  await panel.getByRole('button', { name: 'Open Settings' }).click();
+  await optionsPage;
+
+  await configure(sw, servers.llmUrl, [servers.siteUrl]);
+  await expect(panel.getByText('What should I do in this tab?')).toBeVisible();
+  await expect(panel.getByText('Connect a model to get started')).toHaveCount(0);
+});
