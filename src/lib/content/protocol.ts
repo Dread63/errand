@@ -17,6 +17,8 @@ export type ContentRequest =
   | { type: 'overlay'; op: 'hover'; rect: Rect | null }
   | { type: 'overlay'; op: 'highlight'; rect: Rect | null; label?: string };
 
-export type ResolveResult = { ok: true; x: number; y: number; info: ElementInfo } | { ok: false; error: string };
+export type ResolveResult =
+  | { ok: true; x: number; y: number; info: ElementInfo; /** What a click at x/y would land on instead, e.g. an open menu. */ coveredBy?: ElementInfo }
+  | { ok: false; error: string };
 
 export type ContentReply = { ok: true; value: unknown } | { ok: false; error: string };

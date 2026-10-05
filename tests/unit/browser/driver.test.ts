@@ -141,6 +141,16 @@ describe('ChromeDriver.target', () => {
     setResolve({ ok: false, error: 'Element [4] no longer exists on the page.' });
     await expect(driver.target(call('click', { id: 4 }))).rejects.toThrow(new ToolError('Element [4] no longer exists on the page.'));
   });
+  it('refuses to click, type into or hover an element something else is drawn over', async () => {
+    const { driver, setResolve } = setup();
+    setResolve({ ok: true, x: 60, y: 35, info: info(), coveredBy: info({ tag: 'div', role: 'listbox', name: 'Search options' }) });
+    for (const name of ['click', 'type', 'hover']) {
+      await expect(driver.target(call(name, { id: 4, text: 'x' }))).rejects.toThrow(/covered by listbox "Search options".*Escape/);
+    }
+    // Scrolling to it or picking a <select> option does not go through the pointer.
+    expect((await driver.target(call('scroll', { id: 4 }))).point).toEqual({ x: 60, y: 35 });
+    expect((await driver.target(call('select', { id: 4, value: 'M' }))).point).toEqual({ x: 60, y: 35 });
+  });
   it('refuses element actions on browser pages', async () => {
     const { driver } = setup('chrome://newtab/');
     await expect(driver.target(call('click', { id: 1 }))).rejects.toBeInstanceOf(ToolError);

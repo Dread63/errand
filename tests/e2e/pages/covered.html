@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+  <head><title>Covered</title></head>
+  <body>
+    <span role="checkbox" aria-checked="false" tabindex="0" id="cb" style="display:inline-block;width:20px;height:20px;margin:60px 0 0 40px;border:1px solid"></span>
+    <div role="listbox" aria-label="Search options" id="menu" style="position:absolute;left:0;top:40px;width:300px;height:80px;background:#eee">
+      <div role="option" style="margin-left:200px">From me</div>
+    </div>
+    <script>
+      const cb = document.getElementById('cb');
+      cb.addEventListener('click', () => cb.setAttribute('aria-checked', 'true'));
+      document.addEventListener('keydown', (e) => e.key === 'Escape' && document.getElementById('menu').remove());
+    </script>
+  </body>
+</html>

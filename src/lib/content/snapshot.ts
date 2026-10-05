@@ -315,7 +315,44 @@ export async function resolveElement(reg: ElementRegistry, id: number, scroll: b
   }
   const rect = targetOf(el).rect;
   if (rect.w <= 0 || rect.h <= 0) return { ok: false, error: `Element [${id}] is not visible right now.` };
-  return { ok: true, x: Math.round(rect.x + rect.w / 2), y: Math.round(rect.y + rect.h / 2), info: describe(el, id, rect, false) };
+  const x = Math.round(rect.x + rect.w / 2);
+  const y = Math.round(rect.y + rect.h / 2);
+  const result: ResolveResult = { ok: true, x, y, info: describe(el, id, rect, false) };
+  const hit = hitAt(topDocument(el), x, y);
+  if (hit && !composedContains(el, hit) && !composedContains(via, hit) && !composedContains(hit, via)) {
+    const cover = coverOf(hit);
+    result.coveredBy = describe(cover, reg.idFor(cover), rectOf(cover), false);
+  }
+  return result;
+}
+
+function topDocument(el: Element): Document {
+  try {
+    return el.ownerDocument.defaultView?.top?.document ?? el.ownerDocument;
+  } catch {
+    return el.ownerDocument; // cross-origin parent
+  }
+}
+
+/** Whether inner is outer or lies inside it, crossing shadow roots and same-origin iframes. */
+function composedContains(outer: Element, inner: Element): boolean {
+  let n: Node | null = inner;
+  while (n) {
+    if (n === outer) return true;
+    if (n instanceof ShadowRoot) n = n.host;
+    else if (n.nodeType === Node.DOCUMENT_NODE) n = (n as Document).defaultView?.frameElement ?? null;
+    else n = n.parentNode;
+  }
+  return false;
+}
+
+/** The interactive element, or else the named container (a menu, dialog…), that a hit lands in. */
+function coverOf(hit: Element): Element {
+  return (
+    hit.closest(INTERACTIVE) ??
+    hit.closest('[role=dialog],[role=alertdialog],[role=menu],[role=listbox],[role=tooltip],[aria-label],dialog') ??
+    hit
+  );
 }
 
 export function focusedElementInfo(doc: Document, reg: ElementRegistry): ElementInfo | null {
@@ -347,12 +384,20 @@ export function focusedElementInfo(doc: Document, reg: ElementRegistry): Element
  * looking through open shadow roots and same-origin iframes. The overlay is ignored.
  */
 export function elementAtPoint(doc: Document, reg: ElementRegistry, x: number, y: number): ElementInfo | null {
+  const el = hitAt(doc, x, y);
+  if (!el) return null;
+  const target = el.closest(INTERACTIVE) ?? el;
+  return describe(target, reg.idFor(target), targetOf(target).rect, false);
+}
+
+/** The deepest element drawn at a top-level viewport point, ignoring the overlay. */
+function hitAt(doc: Document, x: number, y: number): Element | null {
   let root: Document | ShadowRoot = doc;
   let px = x;
   let py = y;
   let el: Element | null = null;
   for (;;) {
-    const hit: Element | undefined = root.elementsFromPoint(px, py).find((e) => !e.closest('#browser-control-overlay'));
+    const hit: Element | undefined = (root.elementsFromPoint?.(px, py) ?? []).find((e) => !e.closest('#browser-control-overlay'));
     if (!hit || hit === el) break;
     el = hit;
     if (hit.shadowRoot) {
@@ -375,9 +420,7 @@ export function elementAtPoint(doc: Document, reg: ElementRegistry, x: number, y
     }
     break;
   }
-  if (!el || el === doc.documentElement) return null;
-  const target = el.closest(INTERACTIVE) ?? el;
-  return describe(target, reg.idFor(target), targetOf(target).rect, false);
+  return !el || el === doc.documentElement ? null : el;
 }
 
 export function readPageText(doc: Document, maxChars: number): string {
