@@ -10,6 +10,8 @@ export interface ChatRequest {
   tools: ToolSchema[];
   signal?: AbortSignal;
   onDelta?: (text: string) => void;
+  /** Stable per-conversation id; OpenCode Go requires it as x-opencode-session. */
+  sessionId?: string;
 }
 
 export interface LlmClient {
@@ -113,7 +115,11 @@ export class OpenAIClient implements LlmClient {
       try {
         res = await this.fetchImpl(chatUrl(this.profile.baseUrl), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders(this.profile.apiKey) },
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders(this.profile.apiKey),
+            ...(req.sessionId ? { 'x-opencode-session': req.sessionId } : {}),
+          },
           body: JSON.stringify(body),
           signal: ctrl.signal,
         });

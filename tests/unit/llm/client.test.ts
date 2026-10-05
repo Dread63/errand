@@ -60,6 +60,16 @@ describe('OpenAIClient', () => {
     expect(body.tools).toHaveLength(1);
   });
 
+  it('sends the conversation id as x-opencode-session when given', async () => {
+    const fetchImpl = vi.fn(async () => sse(['data: [DONE]\n\n']));
+    const client = new OpenAIClient(profile, { fetchImpl });
+    await client.chat({ messages: [], tools, sessionId: 'conv-1' });
+    await client.chat({ messages: [], tools });
+    const headers = (fetchImpl.mock.calls as unknown as Array<[string, RequestInit]>).map(([, init]) => init.headers as Record<string, string>);
+    expect(headers[0]['x-opencode-session']).toBe('conv-1');
+    expect(headers[1]['x-opencode-session']).toBeUndefined();
+  });
+
   it('omits Authorization when there is no API key', async () => {
     const fetchImpl = vi.fn(async () => sse(['data: [DONE]\n\n']));
     await new OpenAIClient({ ...profile, apiKey: '' }, { fetchImpl }).chat({ messages: [], tools });

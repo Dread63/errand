@@ -22,6 +22,8 @@ export interface AgentDeps {
   hooks: AgentHooks;
   signal: AbortSignal;
   newId?: () => string;
+  /** Passed to the model as a stable per-conversation session id. */
+  sessionId?: string;
 }
 
 /** Ends the task with a message for the user. */
@@ -88,7 +90,13 @@ async function observe(d: AgentDeps): Promise<ObservationRecord> {
 async function callModel(d: AgentDeps, messages: ChatMessage[]): Promise<ChatResult> {
   for (;;) {
     try {
-      return await d.llm.chat({ messages, tools: TOOL_SCHEMAS, signal: d.signal, onDelta: (t) => d.hooks.onDelta(t) });
+      return await d.llm.chat({
+        messages,
+        tools: TOOL_SCHEMAS,
+        signal: d.signal,
+        onDelta: (t) => d.hooks.onDelta(t),
+        ...(d.sessionId ? { sessionId: d.sessionId } : {}),
+      });
     } catch (e) {
       if (d.signal.aborted) throw e;
       const msg = errMsg(e);

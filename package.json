@@ -11,7 +11,8 @@
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare",
     "test": "vitest run",
-    "test:e2e": "wxt build && playwright test"
+    "test:e2e": "wxt build && playwright test",
+    "test:live": "vitest run --config tests/live/vitest.config.ts"
   },
   "dependencies": {
     "pdfjs-dist": "^6.4.299",

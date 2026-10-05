@@ -19,6 +19,13 @@ describe('runAgent', () => {
     expect(s.turnsSeen.length).toBeGreaterThan(1);
   });
 
+  it('passes the session id on every model request', async () => {
+    const s = setup([toolCall('wait', { ms: 1 }), toolCall('done', { summary: 'x' })]);
+    s.deps.sessionId = 'conv-9';
+    await runAgent(task, s.deps);
+    expect(s.llm.requests.map((r) => r.sessionId)).toEqual(['conv-9', 'conv-9']);
+  });
+
   it('Review Focus: a plain-text reply is the final answer', async () => {
     const s = setup([textReply('The price is $5.')]);
     const turns = await runAgent(task, s.deps);

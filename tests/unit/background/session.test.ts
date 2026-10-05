@@ -66,6 +66,13 @@ describe('PanelSession', () => {
     expect(saved[0].title).toBe('Click it');
   });
 
+  it('uses the conversation id as the model session id', async () => {
+    const s = await setup([toolCall('done', { summary: 'ok' })], { allow: true });
+    await s.session.handle(start);
+    const convId = (await s.history.list())[0].id;
+    expect(s.llm.requests[0].sessionId).toBe(convId);
+  });
+
   it('relays approvals through the port and continues with the answer', async () => {
     const s = await setup([toolCall('done', { summary: 'ok' })]);
     const run = s.session.handle(start);

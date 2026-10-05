@@ -176,6 +176,7 @@ export class PanelSession {
         settings,
         signal: abort.signal,
         newId: this.newId,
+        sessionId: conv.id,
         hooks: {
           onTurns: (turns) => {
             conv.turns = turns;
