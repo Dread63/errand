@@ -45,9 +45,18 @@ export function createContentHandler(doc: Document, opts: { moveMs?: number } = 
 }
 
 export function installContentAgent(): void {
-  const w = window as unknown as { __browserControl?: boolean };
-  if (w.__browserControl) return;
-  w.__browserControl = true;
+  // A script left behind by a reloaded extension keeps its window flag but can no longer
+  // receive messages (its runtime.id is cleared), so only a live instance blocks reinstalling.
+  const w = window as unknown as { __browserControlAlive?: () => boolean };
+  if (w.__browserControlAlive?.()) return;
+  const runtime = chrome.runtime;
+  w.__browserControlAlive = () => {
+    try {
+      return !!runtime?.id;
+    } catch {
+      return false;
+    }
+  };
   const handle = createContentHandler(document);
   chrome.runtime.onMessage.addListener((msg: unknown, _sender, sendResponse: (r: ContentReply) => void) => {
     const m = msg as { __bc?: boolean; req?: ContentRequest } | undefined;

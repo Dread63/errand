@@ -66,7 +66,19 @@ async function observe(d: AgentDeps): Promise<ObservationRecord> {
     };
   }
   const mode = d.profile.contextMode;
-  const o = await d.driver.observe({ mode, screenshot: d.profile.supportsVision });
+  let o;
+  try {
+    o = await d.driver.observe({ mode, screenshot: d.profile.supportsVision });
+  } catch (e) {
+    if (!(e instanceof ToolError)) throw e;
+    return {
+      url,
+      title: '',
+      summary: `${url} (could not be read)`,
+      detail: `URL: ${url}\nThis page could not be read: ${e.message} Wait and try again, navigate elsewhere, or call done.`,
+      tabs: '',
+    };
+  }
   const r = renderSnapshot(o.snapshot, o.tabs, mode);
   const record: ObservationRecord = { url: o.snapshot.url, title: o.snapshot.title, summary: r.summary, detail: r.detail, tabs: r.tabs };
   if (o.screenshot) record.screenshot = o.screenshot;

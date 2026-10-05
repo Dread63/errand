@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runAgent } from '@/lib/agent/loop';
-import { DetachedError, LlmError, TaskEndedError } from '@/lib/errors';
+import { DetachedError, LlmError, TaskEndedError, ToolError } from '@/lib/errors';
 import type { StepTurn } from '@/lib/types';
 import { el, last, setup, task, textReply, toolCall } from './fakes';
 
@@ -137,6 +137,14 @@ describe('runAgent', () => {
     const s = setup([]);
     s.driver.observeErrors = [new TaskEndedError('All agent tabs were closed, so the task ended.')];
     expect(last(await runAgent(task, s.deps))).toEqual({ kind: 'assistant', text: 'All agent tabs were closed, so the task ended.' });
+  });
+
+  it('an unreadable page is reported to the model instead of ending the task', async () => {
+    const s = setup([toolCall('done', { summary: 'moved on' })]);
+    s.driver.observeErrors = [new ToolError('Could not reach the page (it may still be loading): gone')];
+    const turns = await runAgent(task, s.deps);
+    expect(JSON.stringify(s.llm.requests[0].messages)).toContain('could not be read');
+    expect(last(turns)).toEqual({ kind: 'assistant', text: 'moved on' });
   });
 
   it('stops at the step limit', async () => {
