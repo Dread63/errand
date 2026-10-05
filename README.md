@@ -27,6 +27,7 @@ Open the panel's ⚙ (Settings).
 1. Base URL `https://opencode.ai/zen/go/v1`, paste your API key.
 2. **Test connection**, pick e.g. the GLM 5.3 Flash id it lists.
 3. **Context mode: Full**, context window `1000000`.
+4. **Reasoning effort: Low** for fast steps. With the model default, GLM thinks for up to minutes per step; Low and Medium turn thinking off on OpenCode Go.
 
 ## Using it
 
@@ -41,5 +42,8 @@ Open the panel's ⚙ (Settings).
 npm run dev        # WXT dev mode with reload
 npm test           # unit tests (Vitest)
 npm run test:e2e   # builds, then runs Playwright against the real extension
+npm run test:live:e2e  # real-model tasks (spreadsheet, form, multi-tab); needs OPEN_CODE_GO_API_KEY in .env.local
 npm run compile    # type-check
 ```
+
+`test:live:e2e` runs each task with reasoning effort `default` and `low` (override with `LIVE_EFFORTS=low`, `LIVE_MODEL=…`) and prints a pass/fail and timing table. **Log step timings** in Settings writes per-phase timings to the service worker console.

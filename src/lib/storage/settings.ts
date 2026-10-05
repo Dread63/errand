@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeProfileId: 'macbook',
   stepLimit: 30,
   riskyKeywords: DEFAULT_RISKY_KEYWORDS,
+  debugTiming: false,
 };
 
 export class SettingsStore {

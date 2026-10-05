@@ -33,6 +33,28 @@ describe('runAgent', () => {
     expect(s.driver.performed).toEqual([]);
   });
 
+  it('after acting, a plain-text reply gets one nudge to call a tool instead of ending the task', async () => {
+    const s = setup([
+      toolCall('click', { id: 1 }),
+      textReply('Let me check the other page.'),
+      toolCall('done', { summary: 'Shop B is cheaper.' }),
+    ]);
+    const turns = await runAgent(task, s.deps);
+    expect(last(turns)).toEqual({ kind: 'assistant', text: 'Shop B is cheaper.' });
+    const tail = s.llm.requests[2].messages.slice(-2);
+    expect(tail[0]).toEqual({ role: 'assistant', content: 'Let me check the other page.' });
+    expect(tail[1]).toMatchObject({ role: 'user', content: expect.stringContaining('call done') });
+    // The nudge is not kept in the conversation shown to the user.
+    expect(turns.some((t) => t.kind === 'assistant' && t.text.includes('Let me check'))).toBe(false);
+  });
+
+  it('a second plain-text reply in a row is accepted as the answer, so it never spins', async () => {
+    const s = setup([toolCall('click', { id: 1 }), textReply('Thinking.'), textReply('The price is $5.')]);
+    const turns = await runAgent(task, s.deps);
+    expect(last(turns)).toEqual({ kind: 'assistant', text: 'The price is $5.' });
+    expect(s.llm.requests).toHaveLength(3);
+  });
+
   it('feeds validation errors back to the model, then recovers', async () => {
     const s = setup([toolCall('click', {}), toolCall('click', { id: 1 }), toolCall('done', { summary: 'ok' })]);
     const turns = await runAgent(task, s.deps);

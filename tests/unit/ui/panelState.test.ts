@@ -16,6 +16,17 @@ describe('panelReducer', () => {
     expect(s.running).toBe(false);
   });
 
+  it("accumulates the model's thinking until the next conversation update", () => {
+    let s = panelReducer(initialPanelState, { type: 'status', status: 'running' });
+    s = panelReducer(s, { type: 'reasoning', text: 'The user ' });
+    s = panelReducer(s, { type: 'reasoning', text: 'wants a budget.' });
+    expect(s.reasoning).toBe('The user wants a budget.');
+    s = panelReducer(s, { type: 'conversation', conversationId: 'c1', turns });
+    expect(s.reasoning).toBe('');
+    s = panelReducer(s, { type: 'reasoning', text: 'x' });
+    expect(panelReducer(s, { type: 'status', status: 'idle' }).reasoning).toBe('');
+  });
+
   it('adds and removes approval gates; idle clears leftovers', () => {
     let s = panelReducer(initialPanelState, { type: 'gate', requestId: 'g1', request: { kind: 'site', origin: 'https://a.test' } });
     s = panelReducer(s, { type: 'gate', requestId: 'g2', request: { kind: 'ask', question: 'Size?' } });

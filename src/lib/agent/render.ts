@@ -23,6 +23,7 @@ export function renderSnapshot(
   snap: PageSnapshot,
   tabs: TabInfo[],
   mode: ContextMode,
+  screenshot = false,
 ): { detail: string; summary: string; tabs: string } {
   const tabText = tabs.map((t) => `${t.active ? '*' : ' '} ${t.index}: ${clip(t.title, 50)} — ${t.url}`).join('\n');
   if (snap.restricted) {
@@ -34,6 +35,7 @@ export function renderSnapshot(
   }
   const lines = [`URL: ${snap.url}`, `Title: ${snap.title}`];
   if (snap.scrollMaxY > 0) lines.push(`Scroll: ${Math.round((snap.scrollY / snap.scrollMaxY) * 100)}% (more content ${snap.scrollY < snap.scrollMaxY ? 'below' : 'above'})`);
+  if (screenshot) lines.push(`Screenshot: ${snap.viewport.w}×${snap.viewport.h} px (x/y coordinates use these pixels)`);
   if (mode === 'full' && snap.headings.length) lines.push(`Headings: ${snap.headings.join(' | ')}`);
   lines.push('Elements:');
   const budgetChars = MODE_LIMITS[mode].elementTokens * 4;

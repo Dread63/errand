@@ -36,11 +36,39 @@ const NAMED: Record<string, [key: string, code: string, keyCode: number, text?: 
 
 const SHORTCUT_COMMANDS: Record<string, string> = { a: 'selectAll', c: 'copy', v: 'paste', x: 'cut', z: 'undo' };
 
-export function parseCombo(combo: string): KeySpec {
-  const parts = combo
+/** US-layout punctuation keys: unshifted char -> [code, Windows virtual key code, shifted char]. */
+const PUNCT: Record<string, [code: string, keyCode: number, shifted: string]> = {
+  '-': ['Minus', 189, '_'],
+  '=': ['Equal', 187, '+'],
+  '[': ['BracketLeft', 219, '{'],
+  ']': ['BracketRight', 221, '}'],
+  '\\': ['Backslash', 220, '|'],
+  ';': ['Semicolon', 186, ':'],
+  "'": ['Quote', 222, '"'],
+  ',': ['Comma', 188, '<'],
+  '.': ['Period', 190, '>'],
+  '/': ['Slash', 191, '?'],
+  '`': ['Backquote', 192, '~'],
+};
+const DIGIT_SHIFTED = ')!@#$%^&*(';
+/** Shifted char -> the unshifted key that produces it. */
+const UNSHIFT: Record<string, string> = Object.fromEntries([
+  ...Object.entries(PUNCT).map(([k, v]) => [v[2], k]),
+  ...[...DIGIT_SHIFTED].map((c, i) => [c, String(i)]),
+]);
+
+function splitCombo(combo: string): string[] {
+  const s = combo.trim();
+  // A trailing "+" is the plus key itself ("+", "Shift++"), not a separator.
+  if (s.endsWith('+')) return [...splitCombo(s.slice(0, -1).replace(/\+$/, '')), '+'].filter(Boolean);
+  return s
     .split('+')
     .map((p) => p.trim())
     .filter(Boolean);
+}
+
+export function parseCombo(combo: string): KeySpec {
+  const parts = splitCombo(combo);
   if (!parts.length) throw new ToolError('Empty key combination.');
   let modifiers = 0;
   for (const m of parts.slice(0, -1)) {
@@ -56,10 +84,36 @@ export function parseCombo(combo: string): KeySpec {
     return { key, code, keyCode, modifiers, ...(text && textAllowed ? { text } : {}) };
   }
   if (last.length !== 1) throw new ToolError(`Unknown key "${last}".`);
-  const upper = last.toUpperCase();
-  const key = modifiers & 8 ? upper : last;
-  const code = /[a-z]/i.test(last) ? `Key${upper}` : /[0-9]/.test(last) ? `Digit${last}` : '';
-  const spec: KeySpec = { key, code, keyCode: upper.charCodeAt(0), modifiers };
+  // "+" or "!" is typed as Shift plus the key that carries it.
+  let base = last;
+  if (UNSHIFT[last]) {
+    base = UNSHIFT[last];
+    modifiers |= 8;
+  } else if (/[A-Z]/.test(last)) {
+    modifiers |= 8;
+  }
+  const shift = (modifiers & 8) !== 0;
+  const punct = PUNCT[base];
+  let key: string;
+  let code: string;
+  let keyCode: number;
+  if (/[a-z]/i.test(base)) {
+    key = shift ? base.toUpperCase() : base.toLowerCase();
+    code = `Key${base.toUpperCase()}`;
+    keyCode = base.toUpperCase().charCodeAt(0);
+  } else if (/[0-9]/.test(base)) {
+    key = shift ? DIGIT_SHIFTED[Number(base)] : base;
+    code = `Digit${base}`;
+    keyCode = base.charCodeAt(0);
+  } else if (punct) {
+    key = shift ? punct[2] : base;
+    [code, keyCode] = punct;
+  } else {
+    key = last;
+    code = '';
+    keyCode = last.charCodeAt(0);
+  }
+  const spec: KeySpec = { key, code, keyCode, modifiers };
   if (textAllowed) spec.text = key;
   const cmd = SHORTCUT_COMMANDS[last.toLowerCase()];
   if (!textAllowed && modifiers & (2 | 4) && cmd) spec.commands = [cmd];

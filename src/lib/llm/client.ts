@@ -1,5 +1,6 @@
 import { LlmError } from '../errors';
 import type { Profile } from '../types';
+import { logTiming } from '../timing';
 import { errMsg, sleep } from '../util';
 import { createSseParser } from './sse';
 import { applyChunk, finalize, fromCompletion, newAccumulator } from './stream';
@@ -10,6 +11,8 @@ export interface ChatRequest {
   tools: ToolSchema[];
   signal?: AbortSignal;
   onDelta?: (text: string) => void;
+  /** The model's thinking (reasoning_content / reasoning), streamed before its answer. */
+  onReasoning?: (text: string) => void;
   /** Stable per-conversation id; OpenCode Go requires it as x-opencode-session. */
   sessionId?: string;
 }
@@ -63,7 +66,7 @@ export class OpenAIClient implements LlmClient {
   private retryDelays: number[];
 
   constructor(
-    private profile: Pick<Profile, 'baseUrl' | 'apiKey' | 'model'>,
+    private profile: Pick<Profile, 'baseUrl' | 'apiKey' | 'model' | 'reasoningEffort'>,
     opts: ClientOptions = {},
   ) {
     this.fetchImpl = opts.fetchImpl ?? defaultFetch;
@@ -75,11 +78,13 @@ export class OpenAIClient implements LlmClient {
     let last: LlmError | undefined;
     for (let attempt = 0; attempt <= this.retryDelays.length; attempt++) {
       if (attempt > 0) await sleep(this.retryDelays[attempt - 1], req.signal);
+      const t0 = performance.now();
       try {
         return await this.once(req);
       } catch (e) {
         if (req.signal?.aborted) throw e;
         const err = e instanceof LlmError ? e : new LlmError(errMsg(e), true);
+        logTiming(`model: attempt ${attempt + 1} failed (${err.message.slice(0, 120)})${err.retryable && attempt < this.retryDelays.length ? '; retrying' : ''}`, performance.now() - t0);
         if (!err.retryable) throw err;
         last = err;
       }
@@ -103,12 +108,15 @@ export class OpenAIClient implements LlmClient {
     };
     const timeoutMsg = () => `No response from the model for ${Math.round(this.idleTimeoutMs / 1000)}s.`;
     arm();
+    const t0 = performance.now();
+    const since = () => performance.now() - t0;
     try {
       const body = {
         model: this.profile.model,
         messages: req.messages,
         stream: true,
         stream_options: { include_usage: true },
+        ...(this.profile.reasoningEffort ? { reasoning_effort: this.profile.reasoningEffort } : {}),
         ...(req.tools.length ? { tools: req.tools, tool_choice: 'auto' } : {}),
       };
       let res: Response;
@@ -127,6 +135,7 @@ export class OpenAIClient implements LlmClient {
         if (req.signal?.aborted) throw e;
         throw new LlmError(timedOut ? timeoutMsg() : `Network error: ${errMsg(e)}`, true);
       }
+      logTiming('model: response headers', since());
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         const retryable = res.status === 408 || res.status === 429 || res.status >= 500;
@@ -139,6 +148,9 @@ export class OpenAIClient implements LlmClient {
 
       const acc = newAccumulator();
       let done = false;
+      let firstReasoning = -1;
+      let firstOutput = -1;
+      let reasoningChars = 0;
       const parser = createSseParser((data) => {
         if (data.trim() === '[DONE]') {
           done = true;
@@ -152,6 +164,14 @@ export class OpenAIClient implements LlmClient {
         }
         const err = (json as { error?: { message?: string } }).error;
         if (err) throw new LlmError(`Server error: ${err.message ?? JSON.stringify(err)}`, true);
+        const delta = (json as { choices?: Array<{ delta?: Record<string, unknown> }> }).choices?.[0]?.delta;
+        const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+        if (typeof reasoning === 'string' && reasoning) {
+          if (firstReasoning < 0) firstReasoning = since();
+          reasoningChars += reasoning.length;
+          req.onReasoning?.(reasoning);
+        }
+        if (firstOutput < 0 && (delta?.content || delta?.tool_calls)) firstOutput = since();
         const text = applyChunk(acc, json);
         if (text) req.onDelta?.(text);
       });
@@ -165,6 +185,9 @@ export class OpenAIClient implements LlmClient {
           parser.push(decoder.decode(value, { stream: true }));
         }
         parser.end();
+        if (firstReasoning >= 0) logTiming(`model: first reasoning token (${reasoningChars} chars total)`, firstReasoning);
+        if (firstOutput >= 0) logTiming('model: first content/tool-call token', firstOutput);
+        logTiming(`model: stream done (${acc.usage ? `${acc.usage.promptTokens} prompt / ${acc.usage.completionTokens} completion tokens` : 'no usage reported'})`, since());
       } catch (e) {
         if (e instanceof LlmError) throw e;
         if (req.signal?.aborted) throw e;

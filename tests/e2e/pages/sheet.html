@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sheet</title>
+    <!--
+      A tiny spreadsheet built the way Google Sheets and Excel Online are: cells are plain divs with
+      no role, tabindex or ids the agent can target, and all typing goes to a hidden, always-focused
+      textarea. The agent must click cells by screenshot coordinates and type into the focused input.
+    -->
+    <style>
+      body { margin: 0; font: 13px sans-serif; }
+      #bar { display: flex; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #ccc; }
+      #name { width: 40px; font-weight: bold; }
+      #formula { flex: 1; color: #333; }
+      #grid { display: grid; grid-template-columns: 40px repeat(6, 100px); position: relative; user-select: none; }
+      #grid div { height: 24px; line-height: 24px; padding: 0 4px; border-right: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0; overflow: hidden; white-space: nowrap; }
+      #grid .hdr { background: #f3f3f3; color: #555; text-align: center; }
+      #grid .sel { outline: 2px solid #1a73e8; outline-offset: -2px; }
+      #input { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="bar"><span id="name">A1</span><span id="formula"></span></div>
+    <div id="grid"></div>
+    <textarea id="input" autocomplete="off"></textarea>
+    <script>
+      const COLS = 'ABCDEF';
+      const ROWS = 15;
+      const raw = {};
+      const grid = document.getElementById('grid');
+      const input = document.getElementById('input');
+      let sel = { c: 0, r: 1 };
+      let rowStart = 0; // column where Tab-typing began, so Enter returns there on the next row
+
+      grid.appendChild(Object.assign(document.createElement('div'), { className: 'hdr' }));
+      for (const col of COLS) grid.appendChild(Object.assign(document.createElement('div'), { className: 'hdr', textContent: col }));
+      for (let r = 1; r <= ROWS; r++) {
+        grid.appendChild(Object.assign(document.createElement('div'), { className: 'hdr', textContent: String(r) }));
+        for (let c = 0; c < COLS.length; c++) {
+          const d = document.createElement('div');
+          d.dataset.cell = COLS[c] + r;
+          grid.appendChild(d);
+        }
+      }
+
+      const ref = (s) => COLS[s.c] + s.r;
+      const num = (name) => {
+        const v = value(name);
+        return typeof v === 'number' ? v : Number(v) || 0;
+      };
+      function value(name) {
+        const s = raw[name];
+        if (s === undefined || s === '') return '';
+        if (!s.startsWith('=')) return isNaN(Number(s)) ? s : Number(s);
+        let expr = s.slice(1).toUpperCase().replace(/SUM\(([A-F])(\d+):([A-F])(\d+)\)/g, (_, c1, r1, c2, r2) => {
+          let t = 0;
+          for (let c = COLS.indexOf(c1); c <= COLS.indexOf(c2); c++) for (let r = +r1; r <= +r2; r++) t += num(COLS[c] + r);
+          return String(t);
+        });
+        expr = expr.replace(/\b([A-F])(\d+)\b/g, (_, c, r) => String(num(c + r)));
+        if (!/^[\d+\-*/(). ]+$/.test(expr)) return '#ERROR!';
+        try {
+          return Function(`return (${expr})`)();
+        } catch {
+          return '#ERROR!';
+        }
+      }
+      function render() {
+        for (const d of grid.querySelectorAll('[data-cell]')) {
+          const v = value(d.dataset.cell);
+          d.textContent = d.dataset.cell === ref(sel) && input.value ? input.value : String(v);
+          d.classList.toggle('sel', d.dataset.cell === ref(sel));
+        }
+        document.getElementById('name').textContent = ref(sel);
+        document.getElementById('formula').textContent = input.value || raw[ref(sel)] || '';
+      }
+      function commit() {
+        if (input.value) raw[ref(sel)] = input.value;
+        input.value = '';
+      }
+      function select(c, r) {
+        sel = { c: Math.max(0, Math.min(COLS.length - 1, c)), r: Math.max(1, Math.min(ROWS, r)) };
+        render();
+      }
+
+      grid.addEventListener('mousedown', (e) => {
+        const cell = e.target.closest('[data-cell]');
+        if (!cell) return;
+        e.preventDefault();
+        commit();
+        const name = cell.dataset.cell;
+        rowStart = COLS.indexOf(name[0]);
+        select(rowStart, Number(name.slice(1)));
+        input.focus();
+      });
+      input.addEventListener('input', render);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+          select(rowStart, sel.r + 1);
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          commit();
+          select(sel.c + 1, sel.r);
+        } else if (!input.value && e.key.startsWith('Arrow')) {
+          e.preventDefault();
+          const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key];
+          select(sel.c + d[0], sel.r + d[1]);
+          rowStart = sel.c;
+        }
+      });
+      // Like a real sheet, keep keyboard focus on the hidden input.
+      document.addEventListener('mousedown', () => setTimeout(() => input.focus()));
+      input.focus();
+      render();
+
+      /** Test hook: every non-empty cell as { raw, value }. */
+      window.sheetData = () => Object.fromEntries(Object.keys(raw).filter((k) => raw[k] !== '').map((k) => [k, { raw: raw[k], value: value(k) }]));
+    </script>
+  </body>
+</html>

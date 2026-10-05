@@ -27,4 +27,5 @@ export interface UserGate {
 export interface AgentHooks {
   onTurns(turns: Turn[]): void;
   onDelta(text: string): void;
+  onReasoning?(text: string): void;
 }

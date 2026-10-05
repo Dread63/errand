@@ -1,5 +1,6 @@
 import { TaskEndedError, ToolError } from '../errors';
 import type { TabInfo } from '../types';
+import { logTiming } from '../timing';
 import { sleep } from '../util';
 
 type Tab = chrome.tabs.Tab;
@@ -131,5 +132,6 @@ export class AgentTabs {
       if (!t || t.status === 'complete') return;
       await sleep(poll);
     }
+    logTiming(`waitForLoad: gave up, tab ${tabId} still loading after`, timeoutMs);
   }
 }

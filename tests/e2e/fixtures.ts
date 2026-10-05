@@ -6,10 +6,12 @@ const extPath = path.resolve('.output/chrome-mv3');
 const frameInjectorPath = path.resolve('tests/e2e/extensions/frame-injector');
 
 export const test = base.extend<
-  { context: BrowserContext; sw: Worker; extensionId: string; withFrameInjector: boolean },
+  { context: BrowserContext; sw: Worker; extensionId: string; withFrameInjector: boolean; screenScale: number },
   { servers: Servers }
 >({
   withFrameInjector: [false, { option: true }],
+  /** Device pixel ratio for pages, like a high-DPI laptop screen. */
+  screenScale: [0, { option: true }],
   servers: [
     async ({}, use) => {
       const s = await startServers();
@@ -18,11 +20,13 @@ export const test = base.extend<
     },
     { scope: 'worker' },
   ],
-  context: async ({ withFrameInjector }, use) => {
+  context: async ({ withFrameInjector, screenScale }, use) => {
     const exts = withFrameInjector ? `${extPath},${frameInjectorPath}` : extPath;
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
       args: [`--disable-extensions-except=${exts}`, `--load-extension=${exts}`],
+      // Emulated device pixel ratio: pages and Chrome's screenshots render at this scale.
+      ...(screenScale ? { deviceScaleFactor: screenScale } : {}),
     });
     await use(context);
     await context.close();
@@ -40,22 +44,22 @@ export const test = base.extend<
 
 export const expect = test.expect;
 
-export async function configure(sw: Worker, llmUrl: string, allowedOrigins: string[]) {
+export async function configure(sw: Worker, llmUrl: string, allowedOrigins: string[], profile: Record<string, unknown> = {}) {
   await sw.evaluate(
-    async ({ llmUrl, allowedOrigins }) => {
+    async ({ llmUrl, allowedOrigins, profile }) => {
       // Wait for onInstalled to seed default profiles so it cannot overwrite ours afterwards.
       for (let i = 0; i < 100 && !(await chrome.storage.local.get('profiles')).profiles; i++) {
         await new Promise((r) => setTimeout(r, 50));
       }
       await chrome.storage.local.set({
         profiles: [
-          { id: 'mock', name: 'Mock', baseUrl: llmUrl, apiKey: '', model: 'mock-model', supportsVision: false, contextMode: 'standard', contextWindow: 32000, maxScreenshots: 1 },
+          { id: 'mock', name: 'Mock', baseUrl: llmUrl, apiKey: '', model: 'mock-model', supportsVision: false, contextMode: 'standard', contextWindow: 32000, maxScreenshots: 1, ...profile },
         ],
-        settings: { activeProfileId: 'mock', stepLimit: 10, riskyKeywords: ['buy', 'delete'] },
+        settings: { activeProfileId: 'mock', stepLimit: 15, riskyKeywords: ['buy', 'delete'], debugTiming: false },
         allowedOrigins,
       });
     },
-    { llmUrl, allowedOrigins },
+    { llmUrl, allowedOrigins, profile },
   );
 }
 

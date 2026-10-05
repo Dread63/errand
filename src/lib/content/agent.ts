@@ -1,7 +1,7 @@
 import { FrameGuard } from './guard';
 import { Overlay } from './overlay';
 import type { ContentReply, ContentRequest } from './protocol';
-import { ElementRegistry, focusedElementInfo, readPageText, resolveElement, selectOption, takeSnapshot } from './snapshot';
+import { ElementRegistry, elementAtPoint, focusedElementInfo, readPageText, resolveElement, selectOption, takeSnapshot } from './snapshot';
 
 export function createContentHandler(doc: Document, opts: { moveMs?: number; ownExtensionId?: string } = {}) {
   const registry = new ElementRegistry();
@@ -19,6 +19,8 @@ export function createContentHandler(doc: Document, opts: { moveMs?: number; own
         return resolveElement(registry, req.id, req.scroll);
       case 'focused':
         return focusedElementInfo(doc, registry);
+      case 'pointInfo':
+        return elementAtPoint(doc, registry, req.x, req.y);
       case 'readText':
         return readPageText(doc, req.maxChars);
       case 'select':

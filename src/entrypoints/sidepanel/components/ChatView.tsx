@@ -2,11 +2,11 @@ import { useEffect, useRef } from 'react';
 import type { Turn } from '@/lib/types';
 import { StepCard } from './StepCard';
 
-export function ChatView({ turns, streaming, running }: { turns: Turn[]; streaming: string; running: boolean }) {
+export function ChatView({ turns, streaming, reasoning, running }: { turns: Turn[]; streaming: string; reasoning: string; running: boolean }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
-  }, [turns, streaming, running]);
+  }, [turns, streaming, reasoning, running]);
 
   return (
     <div className="chat">
@@ -23,7 +23,19 @@ export function ChatView({ turns, streaming, running }: { turns: Turn[]; streami
           </div>
         );
       })}
-      {running && <div className="msg thinking">{streaming ? streaming.slice(-400) : 'Working…'}</div>}
+      {running && (
+        <div className="msg thinking" data-testid="thinking">
+          {streaming ? (
+            streaming.slice(-400)
+          ) : reasoning ? (
+            <>
+              <span className="thinking-label">Thinking…</span> {reasoning.slice(-400)}
+            </>
+          ) : (
+            'Working…'
+          )}
+        </div>
+      )}
       <div ref={end} />
     </div>
   );

@@ -342,6 +342,44 @@ export function focusedElementInfo(doc: Document, reg: ElementRegistry): Element
   return describe(el, reg.idFor(el), targetOf(el).rect, false);
 }
 
+/**
+ * The element drawn at a top-level viewport point, or the interactive element containing it,
+ * looking through open shadow roots and same-origin iframes. The overlay is ignored.
+ */
+export function elementAtPoint(doc: Document, reg: ElementRegistry, x: number, y: number): ElementInfo | null {
+  let root: Document | ShadowRoot = doc;
+  let px = x;
+  let py = y;
+  let el: Element | null = null;
+  for (;;) {
+    const hit: Element | undefined = root.elementsFromPoint(px, py).find((e) => !e.closest('#browser-control-overlay'));
+    if (!hit || hit === el) break;
+    el = hit;
+    if (hit.shadowRoot) {
+      root = hit.shadowRoot;
+      continue;
+    }
+    if (hit.tagName === 'IFRAME') {
+      try {
+        const inner: Document | null = (hit as HTMLIFrameElement).contentDocument;
+        if (inner) {
+          const r = hit.getBoundingClientRect();
+          px -= r.left;
+          py -= r.top;
+          root = inner;
+          continue;
+        }
+      } catch {
+        // cross-origin: report the iframe itself
+      }
+    }
+    break;
+  }
+  if (!el || el === doc.documentElement) return null;
+  const target = el.closest(INTERACTIVE) ?? el;
+  return describe(target, reg.idFor(target), targetOf(target).rect, false);
+}
+
 export function readPageText(doc: Document, maxChars: number): string {
   const body = doc.body as HTMLElement | null;
   if (!body) return '';

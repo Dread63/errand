@@ -60,6 +60,37 @@ describe('OpenAIClient', () => {
     expect(body.tools).toHaveLength(1);
   });
 
+  it('streams reasoning separately from content and sends reasoning_effort when set', async () => {
+    const fetchImpl = vi.fn(async () =>
+      sse([
+        ev({ choices: [{ delta: { reasoning_content: 'Think' } }] }),
+        ev({ choices: [{ delta: { reasoning: 'ing.' } }] }),
+        ev({ choices: [{ delta: { content: 'Done' } }] }),
+        'data: [DONE]\n\n',
+      ]),
+    );
+    const reasoning: string[] = [];
+    const deltas: string[] = [];
+    const r = await new OpenAIClient({ ...profile, reasoningEffort: 'low' }, { fetchImpl }).chat({
+      messages: [{ role: 'user', content: 'x' }],
+      tools,
+      onDelta: (d) => deltas.push(d),
+      onReasoning: (t) => reasoning.push(t),
+    });
+    expect(reasoning).toEqual(['Think', 'ing.']);
+    expect(deltas).toEqual(['Done']);
+    expect(r.content).toBe('Done');
+    const body = JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body.reasoning_effort).toBe('low');
+  });
+
+  it('leaves reasoning_effort out when the profile does not set it', async () => {
+    const fetchImpl = vi.fn(async () => sse(['data: [DONE]\n\n']));
+    await new OpenAIClient(profile, { fetchImpl }).chat({ messages: [{ role: 'user', content: 'x' }], tools });
+    const body = JSON.parse(String((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(body).not.toHaveProperty('reasoning_effort');
+  });
+
   it('sends the conversation id as x-opencode-session when given', async () => {
     const fetchImpl = vi.fn(async () => sse(['data: [DONE]\n\n']));
     const client = new OpenAIClient(profile, { fetchImpl });

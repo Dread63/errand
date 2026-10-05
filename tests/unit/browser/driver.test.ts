@@ -44,6 +44,9 @@ function setup(url = 'https://shop.test/') {
     url, title: 'Shop', restricted: false, elements: [info()], headings: [], scrollY: 0, scrollMaxY: 0, viewport: { w: 1000, h: 800 },
   };
   let resolveResult: ResolveResult = { ok: true, x: 60, y: 35, info: info() };
+  let focused: ElementInfo | null = info({ tag: 'input', inForm: true });
+  let pointInfo: ElementInfo | null = info({ tag: 'div', role: 'generic', name: 'A1', rect: { x: 100, y: 40, w: 80, h: 20 } });
+  const fitted: string[] = [];
   const content: MessengerLike = {
     ensureInjected: async () => void log.push('content.inject'),
     send: async <T,>(_t: number, req: ContentRequest): Promise<T> => {
@@ -56,12 +59,29 @@ function setup(url = 'https://shop.test/') {
       if (req.type === 'resolve') return resolveResult as T;
       if (req.type === 'readText') return 'PAGE TEXT' as T;
       if (req.type === 'select') return 'Selected "M".' as T;
-      if (req.type === 'focused') return info({ tag: 'input', inForm: true }) as T;
+      if (req.type === 'focused') return focused as T;
+      if (req.type === 'pointInfo') return pointInfo as T;
       return null as T;
     },
   };
-  const driver = new ChromeDriver(tabs, cdp, content, { isMac: false, settleMs: 0 });
-  return { driver, log, tab, conflictHandler: () => handler, setResolve: (r: ResolveResult) => (resolveResult = r) };
+  const driver = new ChromeDriver(tabs, cdp, content, {
+    isMac: false,
+    settleMs: 0,
+    fitImage: async (d, w, h) => {
+      fitted.push(`${w}x${h}`);
+      return `${d}#fit`;
+    },
+  });
+  return {
+    driver,
+    log,
+    tab,
+    fitted,
+    conflictHandler: () => handler,
+    setResolve: (r: ResolveResult) => (resolveResult = r),
+    setFocused: (e: ElementInfo | null) => (focused = e),
+    setPointInfo: (e: ElementInfo | null) => (pointInfo = e),
+  };
 }
 const call = (name: string, args: Record<string, unknown> = {}): ToolCall => ({ id: 'c', name, args });
 
@@ -81,7 +101,8 @@ describe('ChromeDriver.observe', () => {
     expect(o.screenshot).toBeUndefined();
     // Other extensions' frames are suspended before attaching, since they block the debugger.
     expect(log).toEqual(['content.inject', 'content.guard:on', 'cdp.ensure', 'content.overlay.active', 'content.snapshot']);
-    expect((await driver.observe({ mode: 'compact', screenshot: true })).screenshot).toBe('data:image/jpeg;base64,SHOT');
+    // Screenshots are scaled to the CSS viewport so x/y from the model line up with the page.
+    expect((await driver.observe({ mode: 'compact', screenshot: true })).screenshot).toBe('data:image/jpeg;base64,SHOT#fit');
   });
 });
 
@@ -128,7 +149,82 @@ describe('ChromeDriver.target', () => {
   });
 });
 
+describe('ChromeDriver coordinate and focus targets', () => {
+  it('resolves x/y to whatever is drawn there', async () => {
+    const { driver, log } = setup();
+    await driver.observe({ mode: 'compact', screenshot: false });
+    const t = await driver.target(call('click', { x: 140, y: 50 }));
+    expect(t).toMatchObject({ tabId: 1, origin: 'https://shop.test', point: { x: 140, y: 50 }, element: { name: 'A1' } });
+    expect(log).toContain('content.pointInfo');
+  });
+
+  it('still targets a point when nothing describable is there', async () => {
+    const { driver, setPointInfo } = setup();
+    setPointInfo(null);
+    expect(await driver.target(call('click', { x: 5, y: 5 }))).toEqual({ tabId: 1, origin: 'https://shop.test', point: { x: 5, y: 5 } });
+  });
+
+  it('rejects points outside the screenshot', async () => {
+    const { driver } = setup();
+    await driver.observe({ mode: 'compact', screenshot: false });
+    await expect(driver.target(call('click', { x: 1000, y: 10 }))).rejects.toThrow('(1000, 10) is outside the 1000×800 screenshot.');
+  });
+
+  it('type without id or x/y targets the focused element without moving the mouse', async () => {
+    const { driver, log, setFocused } = setup();
+    setFocused(info({ tag: 'textarea', role: 'textbox', name: '', inForm: false }));
+    const t = await driver.target(call('type', { text: 'Rent' }));
+    expect(t.point).toBeUndefined();
+    expect(t.element?.tag).toBe('textarea');
+    log.length = 0;
+    expect(await driver.perform(call('type', { text: 'Rent' }), t, 'compact')).toBe('Typed into textbox "textarea".');
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:Rent']);
+  });
+});
+
 describe('ChromeDriver.perform', () => {
+  it('clicks at screenshot coordinates', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('click', { x: 140, y: 50 }));
+    log.length = 0;
+    expect(await driver.perform(call('click', { x: 140, y: 50 }), t, 'compact')).toBe('Clicked generic "A1".');
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.click:140,50']);
+  });
+
+  it('types a table in one call: tabs press Tab, newlines press Enter, and nothing is select-all cleared', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('type', { x: 140, y: 50, text: '' }));
+    log.length = 0;
+    await driver.perform(call('type', { x: 140, y: 50, text: 'Rent\t1200\r\nFood\t450\n' }), t, 'compact');
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual([
+      'cdp.click:140,50',
+      'cdp.insert:Rent',
+      'cdp.key:Tab',
+      'cdp.insert:1200',
+      'cdp.key:Enter',
+      'cdp.insert:Food',
+      'cdp.key:Tab',
+      'cdp.insert:450',
+      'cdp.key:Enter',
+    ]);
+  });
+
+  it('clears before typing only when asked, unless targeting a field by id', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('type', { text: 'x' }));
+    log.length = 0;
+    await driver.perform(call('type', { text: 'x', clear: true }), t, 'compact');
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.key:Control+a', 'cdp.key:Backspace', 'cdp.insert:x']);
+  });
+
+  it('repeats a key press', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('key', { combo: 'Tab' }));
+    log.length = 0;
+    expect(await driver.perform(call('key', { combo: 'Tab', repeat: 3 }), t, 'compact')).toBe('Pressed Tab 3 times.');
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.key:Tab', 'cdp.key:Tab', 'cdp.key:Tab']);
+  });
+
   it('moves the overlay cursor before the real click', async () => {
     const { driver, log } = setup();
     const t = await driver.target(call('click', { id: 4 }));
