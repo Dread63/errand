@@ -3,6 +3,7 @@ import { chromeKV } from '../storage/kv';
 import { ProfileStore } from '../storage/profiles';
 import { SettingsStore } from '../storage/settings';
 import type { Profile } from '../types';
+import { activeProfile } from './models';
 
 export function useProfiles() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -24,5 +25,5 @@ export function useProfiles() {
     await new SettingsStore(chromeKV()).update({ activeProfileId: id });
   };
 
-  return { profiles, activeId, active: profiles.find((p) => p.id === activeId) ?? null, setActive };
+  return { profiles, activeId, active: activeProfile(profiles, activeId), setActive };
 }

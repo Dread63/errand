@@ -52,6 +52,11 @@ export function menuGroups(profiles: Profile[], catalog: Record<string, CatalogE
   return out;
 }
 
+/** The profile tasks run with: the stored active one, else the first, so a stale id never leaves Send dead. */
+export function activeProfile(profiles: Profile[], activeId: string | null): Profile | null {
+  return profiles.find((p) => p.id === activeId) ?? profiles[0] ?? null;
+}
+
 export function canSend(p: Profile | null): boolean {
   return !!p && p.model.trim().length > 0;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSend, filterModels, menuGroups, prettyModel, sendBlock, supportsVisionFor, visionChoices } from '@/lib/ui/models';
+import { activeProfile, canSend, filterModels, menuGroups, prettyModel, sendBlock, supportsVisionFor, visionChoices } from '@/lib/ui/models';
 import type { Profile } from '@/lib/types';
 
 const prof = (over: Partial<Profile> = {}): Profile => ({
@@ -82,5 +82,22 @@ describe('visionChoices', () => {
   it('merges fetched and cached lists without duplicates', () => {
     const p = prof({ model: 'a', visionModels: ['b'] });
     expect(visionChoices(p, ['a', 'c'], ['c', 'd'])).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('activeProfile', () => {
+  const p = (id: string) => ({ id }) as Profile;
+
+  it('returns the stored active profile', () => {
+    expect(activeProfile([p('a'), p('b')], 'b')?.id).toBe('b');
+  });
+
+  it('falls back to the first profile when the active id is missing or stale (e.g. an upgraded install)', () => {
+    expect(activeProfile([p('a'), p('b')], null)?.id).toBe('a');
+    expect(activeProfile([p('a'), p('b')], 'macbook')?.id).toBe('a');
+  });
+
+  it('is null with no profiles', () => {
+    expect(activeProfile([], 'a')).toBeNull();
   });
 });

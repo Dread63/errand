@@ -25,6 +25,7 @@ You can delete individual chats under History, remove providers and sites in Set
 When you start a task, Errand sends the following to the model endpoint configured in your active provider (for example OpenAI, OpenRouter, or a model running on your own computer with Ollama or LM Studio):
 
 - your message and any files you attached;
+- the web addresses (URLs) and titles of the tabs in the Errand tab group;
 - text and structure from the pages the agent works on (a simplified snapshot of the page's elements);
 - screenshots of those pages, if your model supports images;
 - the results of the agent's previous steps in the same task.

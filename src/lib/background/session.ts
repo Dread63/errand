@@ -9,7 +9,7 @@ import type { SettingsStore } from '../storage/settings';
 import type { SitePermissionStore } from '../storage/sites';
 import type { Conversation, Profile } from '../types';
 import { setTimingEnabled, timed } from '../timing';
-import { supportsVisionFor } from '../ui/models';
+import { activeProfile, supportsVisionFor } from '../ui/models';
 import { errMsg } from '../util';
 
 export interface DriverHandle extends BrowserDriver {
@@ -135,7 +135,7 @@ export class PanelSession {
   private async run(msg: Extract<PanelToBg, { type: 'start' }>): Promise<void> {
     const settings = await this.deps.settings.get();
     setTimingEnabled(settings.debugTiming);
-    const stored = settings.activeProfileId ? await this.deps.profiles.get(settings.activeProfileId) : undefined;
+    const stored = activeProfile(await this.deps.profiles.list(), settings.activeProfileId);
     if (!stored) {
       this.post({ type: 'error', message: 'No model selected. Choose one in the model menu or add a provider in Settings.' });
       return;

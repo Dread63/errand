@@ -108,7 +108,7 @@ Design docs live in [`docs/superpowers/specs`](docs/superpowers/specs).
 ## Releasing
 
 1. Bump `version` in `package.json` and add an entry to [CHANGELOG.md](CHANGELOG.md).
-2. Commit, then `git tag vX.Y.Z && git push --follow-tags`.
+2. Commit and push, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. The **Release** workflow tests the build, checks the tag matches `package.json`, and attaches `errand-X.Y.Z-chrome.zip` to a GitHub release.
 4. Upload that zip in the [Chrome Web Store dashboard](https://chrome.google.com/webstore/devconsole). Listing text and permission justifications are in [`docs/store/listing.md`](docs/store/listing.md).
 
