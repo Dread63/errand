@@ -1,4 +1,4 @@
-import type { Profile } from '../types';
+import type { Attachment, Profile } from '../types';
 
 export interface CatalogEntry {
   models: string[];
@@ -54,4 +54,17 @@ export function menuGroups(profiles: Profile[], catalog: Record<string, CatalogE
 
 export function canSend(p: Profile | null): boolean {
   return !!p && p.model.trim().length > 0;
+}
+
+/** Why Send is blocked for these attachments, or null. Checked before sending so the draft is kept. */
+export function sendBlock(atts: Attachment[], vision: boolean): string | null {
+  const img = atts.find((a) => a.kind === 'image');
+  return img && !vision ? `"${img.name}" is an image, but the selected model does not support images. Remove it or pick a vision model.` : null;
+}
+
+/** Models offered in the vision picker: current, saved, fetched and cached ids, in that order. */
+export function visionChoices(p: Profile, fetched: string[], cached: string[] | undefined): string[] {
+  const out: string[] = [];
+  for (const m of [p.model.trim(), ...(p.visionModels ?? []), ...fetched, ...(cached ?? [])]) if (m && !out.includes(m)) out.push(m);
+  return out;
 }

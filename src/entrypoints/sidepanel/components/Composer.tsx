@@ -1,7 +1,8 @@
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { readAttachment } from '@/lib/attachments';
 import type { Attachment } from '@/lib/types';
 import { IconPaperclip, IconSend, IconStop } from '@/lib/ui/icons';
+import { sendBlock } from '@/lib/ui/models';
 import { AttachmentTray } from './AttachmentTray';
 
 interface Props {
@@ -20,6 +21,7 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
+  const blocked = sendBlock(atts, vision);
 
   async function addFiles(files: File[]) {
     setErr(null);
@@ -37,6 +39,37 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
     }
   }
 
+  // Files can be dropped anywhere in the panel, not only on the input box.
+  const addRef = useRef(addFiles);
+  addRef.current = addFiles;
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDragging(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (!e.relatedTarget) setDragging(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDragging(false);
+      void addRef.current(Array.from(e.dataTransfer!.files));
+    };
+    document.addEventListener('dragenter', over);
+    document.addEventListener('dragover', over);
+    document.addEventListener('dragleave', leave);
+    document.addEventListener('drop', drop);
+    return () => {
+      document.removeEventListener('dragenter', over);
+      document.removeEventListener('dragover', over);
+      document.removeEventListener('dragleave', leave);
+      document.removeEventListener('drop', drop);
+    };
+  }, []);
+
   function grow() {
     const el = area.current;
     if (!el) return;
@@ -46,7 +79,7 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
 
   function submit() {
     const t = text.trim();
-    if (!t || running || !ready) return;
+    if (!t || running || !ready || blocked) return;
     onSend(t, atts);
     setText('');
     setAtts([]);
@@ -54,25 +87,10 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
   }
 
   return (
-    <div
-      className={`composer${dragging ? ' dragging' : ''}`}
-      onDragEnter={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragOver={(e) => e.preventDefault()}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        void addFiles(Array.from(e.dataTransfer.files));
-      }}
-    >
+    <div className={`composer${dragging ? ' dragging' : ''}`}>
       {dragging && <div className="dropzone">Drop files to attach</div>}
       <AttachmentTray items={atts} onRemove={(i) => setAtts((p) => p.filter((_, j) => j !== i))} />
-      {err && <div className="composer-error" role="alert">{err}</div>}
+      {(err || blocked) && <div className="composer-error" role="alert">{err ?? blocked}</div>}
       <textarea
         ref={area}
         data-testid="composer-input"
@@ -121,9 +139,9 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
             className="round-btn"
             aria-label="Send"
             data-testid="composer-send"
-            title={ready ? 'Send' : 'Choose a model first'}
+            title={blocked ?? (ready ? 'Send' : 'Choose a model first')}
             onClick={submit}
-            disabled={!text.trim() || !ready}
+            disabled={!text.trim() || !ready || !!blocked}
           >
             <IconSend size={16} />
           </button>

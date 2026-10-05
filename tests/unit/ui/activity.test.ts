@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, groupTurns, isFailed } from '@/lib/ui/activity';
+import { formatDuration, groupTurns, isFailed, stepNotes } from '@/lib/ui/activity';
 import type { StepTurn, Turn } from '@/lib/types';
 
 const step = (id: string, over: Partial<StepTurn> = {}): StepTurn => ({
@@ -61,5 +61,15 @@ describe('formatDuration', () => {
     expect(formatDuration(400)).toBe('<1s');
     expect(formatDuration(4200)).toBe('4s');
     expect(formatDuration(65_000)).toBe('1m 05s');
+  });
+});
+
+describe('stepNotes', () => {
+  it('keeps the visible reasoning when the model also streamed thinking', () => {
+    expect(stepNotes(step('1', { thinking: 'hmm', reasoning: 'Clicking Save' }))).toEqual({ thought: 'hmm', reasoning: 'Clicking Save' });
+  });
+  it('shows reasoning as the thought when there was no thinking, without repeating it', () => {
+    expect(stepNotes(step('1', { reasoning: 'Clicking Save' }))).toEqual({ thought: 'Clicking Save' });
+    expect(stepNotes(step('1'))).toEqual({});
   });
 });

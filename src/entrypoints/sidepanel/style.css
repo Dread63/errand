@@ -61,6 +61,7 @@
 .think-full { color: var(--muted); font-style: italic; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thumb { width: 38px; height: 24px; object-fit: cover; border-radius: 5px; border: 1px solid var(--border); flex: none; }
 .badge { font-size: 10.5px; padding: 0 6px; border-radius: 4px; background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+.step-reason { margin: 0 0 6px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .act-detail { padding: 0 12px 10px 44px; background: var(--bg); }
 .shot { width: 100%; border-radius: 8px; border: 1px solid var(--border); display: block; }
 .result { margin: 6px 0 0; padding: 6px 8px; font: 11.5px/1.45 var(--mono); background: var(--surface-2); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }

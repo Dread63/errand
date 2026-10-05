@@ -56,3 +56,9 @@ export function formatDuration(ms: number): string {
   if (s < 60) return `${s}s`;
   return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
 }
+
+/** What to show for a step: its thinking as a row, and its visible reasoning in the detail when both exist. */
+export function stepNotes(s: StepTurn): { thought?: string; reasoning?: string } {
+  if (s.thinking) return s.reasoning ? { thought: s.thinking, reasoning: s.reasoning } : { thought: s.thinking };
+  return s.reasoning ? { thought: s.reasoning } : {};
+}

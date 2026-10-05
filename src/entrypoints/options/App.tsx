@@ -6,6 +6,7 @@ import { SettingsStore } from '@/lib/storage/settings';
 import { ModelCatalog } from '@/lib/storage/models';
 import { SitePermissionStore } from '@/lib/storage/sites';
 import type { ContextMode, Profile, Theme } from '@/lib/types';
+import { supportsVisionFor, visionChoices } from '@/lib/ui/models';
 import { newProfile, parseKeywords, validateProfile } from '@/lib/ui/profileForm';
 import { useTheme } from '@/lib/ui/useTheme';
 
@@ -41,7 +42,7 @@ function ProfilesSection() {
               <strong>{p.name}</strong>
               <span className="muted">{p.model || 'no model'}</span>
               <span className="tag">{p.contextMode}</span>
-              {(p.supportsVision || (p.visionModels?.length ?? 0) > 0) && <span className="tag">vision</span>}
+              {supportsVisionFor(p, p.model) && <span className="tag">vision</span>}
               {p.reasoningEffort && <span className="tag">{p.reasoningEffort} reasoning</span>}
             </span>
             <span className="row-actions">
@@ -81,6 +82,12 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
   const [errors, setErrors] = useState<string[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [status, setStatus] = useState('');
+  const [cached, setCached] = useState<string[] | undefined>();
+  useEffect(() => {
+    void new ModelCatalog(chromeKV()).all().then((all) => setCached(all[initial.id]?.models));
+  }, [initial.id]);
+  const choices = visionChoices(p, models, cached);
+  const perModel = (p.visionModels?.length ?? 0) > 0;
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP((prev) => ({ ...prev, [k]: v }));
 
   async function test() {
@@ -116,12 +123,13 @@ function ProfileForm({ initial, onSave, onCancel }: { initial: Profile; onSave: 
         <datalist id="model-ids">{models.map((m) => <option key={m} value={m} />)}</datalist>
       </label>
       <label className="check">
-        <input type="checkbox" checked={p.supportsVision} onChange={(e) => set('supportsVision', e.target.checked)} /> Supports images (vision)
+        <input type="checkbox" checked={p.supportsVision} disabled={perModel} onChange={(e) => set('supportsVision', e.target.checked)} /> Supports images (vision)
+        {perModel && <span className="muted"> — set per model below</span>}
       </label>
-      {models.length > 0 && (
+      {choices.length > 0 && (
         <fieldset className="vision-models">
           <legend>Vision-capable models <span className="muted">(leave all unticked to use the checkbox above for every model)</span></legend>
-          {models.map((m) => (
+          {choices.map((m) => (
             <label key={m} className="check">
               <input
                 type="checkbox"

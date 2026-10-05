@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSend, filterModels, menuGroups, prettyModel, supportsVisionFor } from '@/lib/ui/models';
+import { canSend, filterModels, menuGroups, prettyModel, sendBlock, supportsVisionFor, visionChoices } from '@/lib/ui/models';
 import type { Profile } from '@/lib/types';
 
 const prof = (over: Partial<Profile> = {}): Profile => ({
@@ -61,5 +61,26 @@ describe('canSend', () => {
     expect(canSend(null)).toBe(false);
     expect(canSend(prof({ model: '  ' }))).toBe(false);
     expect(canSend(prof())).toBe(true);
+  });
+});
+
+describe('sendBlock', () => {
+  const img = { name: 'a.png', kind: 'image' as const, dataUrl: 'data:,' };
+  const txt = { name: 'a.txt', kind: 'text' as const, text: 'x' };
+  it('blocks sending images to a model without vision, so typed text is not lost', () => {
+    expect(sendBlock([txt, img], false)).toMatch(/a\.png.*does not support images/);
+    expect(sendBlock([img], true)).toBeNull();
+    expect(sendBlock([txt], false)).toBeNull();
+  });
+});
+
+describe('visionChoices', () => {
+  it('always offers saved vision models and the current model, even before fetching', () => {
+    const p = prof({ model: 'typed', visionModels: ['qwen-vl'] });
+    expect(visionChoices(p, [], undefined)).toEqual(['typed', 'qwen-vl']);
+  });
+  it('merges fetched and cached lists without duplicates', () => {
+    const p = prof({ model: 'a', visionModels: ['b'] });
+    expect(visionChoices(p, ['a', 'c'], ['c', 'd'])).toEqual(['a', 'b', 'c', 'd']);
   });
 });

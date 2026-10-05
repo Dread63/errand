@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { StepTurn } from '@/lib/types';
-import { type ActivityGroup, formatDuration, isFailed } from '@/lib/ui/activity';
+import { type ActivityGroup, formatDuration, isFailed, stepNotes } from '@/lib/ui/activity';
 import { IconCheck, IconChevronDown, IconChevronRight, IconSparkle, IconSpinner, IconWarning, IconX } from '@/lib/ui/icons';
 
 function ThinkingRow({ text, ms }: { text: string; ms?: number }) {
@@ -20,7 +20,7 @@ function StepRow({ step }: { step: StepTurn }) {
   const [open, setOpen] = useState(false);
   const failed = isFailed(step);
   const shot = step.observation?.screenshot;
-  const thought = step.thinking || step.reasoning;
+  const { thought, reasoning } = stepNotes(step);
   return (
     <>
       {thought && <ThinkingRow text={thought} ms={step.thinkingMs} />}
@@ -32,6 +32,7 @@ function StepRow({ step }: { step: StepTurn }) {
       </button>
       {open && (
         <div className="act-detail">
+          {reasoning && <p className="step-reason">{reasoning}</p>}
           {shot && <img className="shot" src={shot} alt="Page before this step" />}
           <pre className="result">{step.result}</pre>
         </div>
