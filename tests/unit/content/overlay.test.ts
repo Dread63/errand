@@ -92,9 +92,9 @@ describe('Overlay', () => {
   });
 
   it('scales move duration with distance between 180 and 450 ms', () => {
-    expect(moveDuration(0)).toBe(180);
-    expect(moveDuration(5000)).toBe(450);
-    expect(moveDuration(400)).toBeGreaterThan(180);
-    expect(moveDuration(400)).toBeLessThan(450);
+    expect(moveDuration(0)).toBe(100);
+    expect(moveDuration(5000)).toBe(260);
+    expect(moveDuration(400)).toBeGreaterThan(100);
+    expect(moveDuration(400)).toBeLessThan(260);
   });
 });

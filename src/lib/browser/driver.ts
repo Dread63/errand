@@ -87,7 +87,7 @@ export class ChromeDriver implements BrowserDriver {
 
   async observe({ mode, screenshot }: { mode: ContextMode; screenshot: boolean }): Promise<Observation> {
     const first = await this.tabs.active();
-    await timed('observe: waitForLoad', () => this.tabs.waitForLoad(first.id!));
+    await timed('observe: waitForLoad', () => this.tabs.waitForLoad(first.id!, undefined, 0));
     const tab = await this.tabs.active();
     const tabId = tab.id!;
     const url = tab.url ?? '';
@@ -198,8 +198,10 @@ export class ChromeDriver implements BrowserDriver {
 
   private async pointTo(t: ActionTarget): Promise<{ x: number; y: number }> {
     if (!t.point) throw new ToolError('This action needs an element id or x and y.');
-    await this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y, label: this.stepLabel });
-    await this.overlay(t.tabId, { type: 'overlay', op: 'hover', rect: t.element?.rect ?? null });
+    await Promise.all([
+      this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y, label: this.stepLabel }),
+      this.overlay(t.tabId, { type: 'overlay', op: 'hover', rect: t.element?.rect ?? null }),
+    ]);
     this.ringShown = true;
     return t.point;
   }
@@ -215,7 +217,7 @@ export class ChromeDriver implements BrowserDriver {
 
   private async settle(tabId: number): Promise<void> {
     await sleep(this.settleMs);
-    await timed('settle: waitForLoad', () => this.tabs.waitForLoad(tabId)).catch(() => {});
+    await timed('settle: waitForLoad', () => this.tabs.waitForLoad(tabId, undefined, 0)).catch(() => {});
   }
 
   async perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {

@@ -123,10 +123,11 @@ export class AgentTabs {
     await this.waitForLoad(this.activeId);
   }
 
-  async waitForLoad(tabId: number, timeoutMs = this.opts.loadTimeoutMs ?? 15_000): Promise<void> {
+  /** `grace` is a pause before the first check, for a navigation that has not started yet; callers that already waited pass 0. */
+  async waitForLoad(tabId: number, timeoutMs = this.opts.loadTimeoutMs ?? 15_000, grace = Math.min(this.opts.pollMs ?? 50, 100)): Promise<void> {
     const poll = this.opts.pollMs ?? 50;
     const deadline = Date.now() + timeoutMs;
-    await sleep(Math.min(poll, 100));
+    if (grace) await sleep(grace);
     while (Date.now() < deadline) {
       const t = await this.tabs.get(tabId).catch(() => null);
       if (!t || t.status === 'complete') return;

@@ -7,6 +7,8 @@ export interface ScriptedCall {
   name: string;
   arguments: Record<string, unknown>;
   content?: string;
+  /** Further tool calls returned in the same model reply. */
+  also?: ScriptedCall[];
 }
 
 export interface Servers {
@@ -47,7 +49,12 @@ export async function startServers(): Promise<Servers> {
           choices: [
             {
               delta: {
-                tool_calls: [{ index: 0, id: `call_${requests.length}`, type: 'function', function: { name: next.name, arguments: JSON.stringify(next.arguments) } }],
+                tool_calls: [next, ...(next.also ?? [])].map((c, index) => ({
+                  index,
+                  id: `call_${requests.length}_${index}`,
+                  type: 'function',
+                  function: { name: c.name, arguments: JSON.stringify(c.arguments) },
+                })),
               },
             },
           ],

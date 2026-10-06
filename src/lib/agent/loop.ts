@@ -49,6 +49,14 @@ const WRAP_UP =
 const NUDGE =
   'You replied without calling a tool, so nothing happened. If the task is finished, call done with your answer; otherwise call the next tool.';
 
+/** Calls that leave the page and its element ids as they were, so the next call can run without a new look. */
+function canBatch(call: ToolCall, role: string | undefined): boolean {
+  const a = call.args;
+  if (call.name === 'type') return a.submit !== true && !/[\r\n]/.test(String(a.text));
+  if (call.name === 'click') return role === 'checkbox' || role === 'radio' || role === 'switch';
+  return call.name === 'select' || call.name === 'hover';
+}
+
 async function ensureSite(d: AgentDeps, origin: string): Promise<boolean> {
   const status = await d.sites.check(origin);
   if (status === 'allowed') return true;
@@ -141,7 +149,7 @@ async function callModel(d: AgentDeps, messages: ChatMessage[], now: () => numbe
   }
 }
 
-async function act(d: AgentDeps, call: ToolCall, step: StepTurn): Promise<string> {
+async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: string }): Promise<string> {
   let target: ActionTarget;
   try {
     target = await d.driver.target(call);
@@ -150,6 +158,7 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn): Promise<string
     throw e;
   }
   step.label = describeCall(call, target);
+  out.role = target.element?.role;
   if (!(await ensureSite(d, target.origin))) return `Error: the user denied access to ${target.origin}.`;
   const risk = classifyRisk(call, target, d.settings.riskyKeywords);
   if (risk.risky) {
@@ -198,6 +207,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
       if (d.signal.aborted) throw new StopTask('Stopped.');
       const stepStart = performance.now();
       const startedAt = now();
+      let prev: { call: ToolCall; role?: string } | undefined;
       const observation = await timed(`step ${n + 1}: observe (total)`, () => guarded(d, () => observe(d)));
       const messages = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
       if (nudge) messages.push(...nudge);
@@ -209,8 +219,8 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
         calibration = Math.min(3, Math.max(0.5, result.usage.promptTokens / estimateTokens(messages)));
       }
 
-      const raw = result.toolCalls[0];
-      if (!raw) {
+      const calls = result.toolCalls;
+      if (!calls.length) {
         const text = result.content.trim();
         // Mid-task, a reply without a tool call is usually narration ("Let me check…"), not the
         // answer. Ask once for a tool call; a second plain reply is taken as the final answer.
@@ -227,68 +237,77 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
       }
       nudged = false;
 
-      const id = newId();
-      const step: StepTurn = {
-        kind: 'step',
-        id,
-        label: describeCall(raw),
-        reasoning: result.content.trim(),
-        call: { ...raw, id: raw.id || id },
-        result: '',
-        risky: false,
-        observation,
-        startedAt,
-        ...(reply.thinking ? { thinking: reply.thinking, thinkingMs: reply.thinkingMs } : {}),
-      };
+      // One reply may carry several calls; extra ones run only while the page stays the same.
+      for (let i = 0; i < calls.length; i++) {
+        const raw = calls[i];
+        if (i > 0 && !raw.error && !canBatch(prev!.call, prev!.role)) break;
+        const id = newId();
+        const step: StepTurn = {
+          kind: 'step',
+          id,
+          label: describeCall(raw),
+          reasoning: i === 0 ? result.content.trim() : '',
+          call: { ...raw, id: raw.id || id },
+          result: '',
+          risky: false,
+          // The page state is shown once; later calls in the batch act on that same state.
+          ...(i === 0 ? { observation } : {}),
+          startedAt: i === 0 ? startedAt : now(),
+          ...(i === 0 && reply.thinking ? { thinking: reply.thinking, thinkingMs: reply.thinkingMs } : {}),
+        };
 
-      let call: ToolCall;
-      try {
-        if (raw.error) throw new ToolError(raw.error);
-        call = validateCall(step.call, d.profile.supportsVision);
-        step.call = call;
-        step.label = describeCall(call);
-        malformed = 0;
-      } catch (e) {
-        if (!(e instanceof ToolError)) throw e;
-        malformed++;
-        step.label = 'Invalid tool call';
-        step.result = `Error: ${e.message}`;
-        push(step);
-        if (malformed > 2) {
-          const again = await d.gate.retry(
-            `The model produced ${malformed} invalid tool calls in a row. Last output: ${raw.name} ${JSON.stringify(raw.args)} ${raw.error ?? e.message}`,
-          );
-          if (!again) throw new StopTask('Stopped after repeated invalid tool calls.');
+        let call: ToolCall;
+        try {
+          if (raw.error) throw new ToolError(raw.error);
+          call = validateCall(step.call, d.profile.supportsVision);
+          step.call = call;
+          step.label = describeCall(call);
           malformed = 0;
+        } catch (e) {
+          if (!(e instanceof ToolError)) throw e;
+          malformed++;
+          step.label = 'Invalid tool call';
+          step.result = `Error: ${e.message}`;
+          push(step);
+          if (malformed > 2) {
+            const again = await d.gate.retry(
+              `The model produced ${malformed} invalid tool calls in a row. Last output: ${raw.name} ${JSON.stringify(raw.args)} ${raw.error ?? e.message}`,
+            );
+            if (!again) throw new StopTask('Stopped after repeated invalid tool calls.');
+            malformed = 0;
+          }
+          break;
         }
-        continue;
-      }
 
-      if (call.name === 'done') {
-        step.label = 'Finished';
-        step.result = 'Task complete.';
-        push(step);
-        push({ kind: 'assistant', text: String(call.args.summary) });
-        return turns;
-      }
-      if (call.name === 'ask_user') {
-        const answer = await d.gate.ask(String(call.args.question));
-        step.result = `User answered: ${answer}`;
-        push(step);
-        continue;
-      }
+        if (call.name === 'done') {
+          step.label = 'Finished';
+          step.result = 'Task complete.';
+          push(step);
+          push({ kind: 'assistant', text: String(call.args.summary) });
+          return turns;
+        }
+        if (call.name === 'ask_user') {
+          const answer = await d.gate.ask(String(call.args.question));
+          step.result = `User answered: ${answer}`;
+          push(step);
+          break;
+        }
 
-      step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step)));
-      acted = true;
-      push(step);
-      if (step.result === REJECTED) {
-        // A rejection ends the task: the model explains itself and hands control back to the user.
-        const wrap = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
-        wrap.push({ role: 'user', content: WRAP_UP });
-        const end = (await callModel(d, wrap, now, [])).result;
-        const done = end.toolCalls[0]?.name === 'done' ? String(end.toolCalls[0].args.summary ?? '').trim() : '';
-        push({ kind: 'assistant', text: done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.' });
-        return turns;
+        const out: { role?: string } = {};
+        step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step, out)));
+        acted = true;
+        push(step);
+        if (step.result === REJECTED) {
+          // A rejection ends the task: the model explains itself and hands control back to the user.
+          const wrap = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
+          wrap.push({ role: 'user', content: WRAP_UP });
+          const end = (await callModel(d, wrap, now, [])).result;
+          const done = end.toolCalls[0]?.name === 'done' ? String(end.toolCalls[0].args.summary ?? '').trim() : '';
+          push({ kind: 'assistant', text: done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.' });
+          return turns;
+        }
+        if (step.result.startsWith('Error')) break;
+        prev = { call, role: out.role };
       }
     }
     push({ kind: 'assistant', text: `Stopped: reached the step limit of ${limit} steps.` });
