@@ -20,6 +20,10 @@
   <img src="docs/store/screenshot-1-task.png" width="800" alt="Errand filling in a form, with its cursor on the page and its steps in the side panel">
 </p>
 
+<p align="center">
+  <video src="docs/demo/demo.mp4" width="800" controls muted></video>
+</p>
+
 ## What it does
 
 Tell Errand what you need ("fill in this form from my notes", "compare these two products", "copy this table into the spreadsheet") and it does it in your real browser. It reads the page, moves a visible cursor, clicks and types, and reports back. You watch every step.
