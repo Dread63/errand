@@ -22,22 +22,30 @@ function matchKeyword(label: string, keywords: string[]): string | null {
 
 const isEnter = (combo: unknown) => String(combo).split('+').pop()?.trim().toLowerCase() === 'enter';
 
-export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: string[]): { risky: boolean; reasons: string[] } {
+export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: string[]): { risky: boolean; reasons: string[]; hard: boolean } {
   const reasons: string[] = [];
+  /** Reasons a bypass never skips: credentials, payment and checkout-style labels. */
+  let hard = false;
   const e = target.element;
   if (e) {
-    if (call.name === 'type' && isSensitiveField(e)) reasons.push('Typing into a password, payment or one-time-code field');
+    if (call.name === 'type' && isSensitiveField(e)) {
+      reasons.push('Typing into a password, payment or one-time-code field');
+      hard = true;
+    }
     const typesEnter = call.args.submit === true || /[\r\n]/.test(String(call.args.text ?? ''));
     if (call.name === 'type' && typesEnter && e.inForm) reasons.push('Pressing Enter inside a form');
     if (call.name === 'key' && isEnter(call.args.combo) && e.inForm) reasons.push('Pressing Enter inside a form');
     if (call.name === 'click') {
       if (e.isSubmit) reasons.push('Clicking a submit button');
       const kw = matchKeyword(e.name, keywords);
-      if (kw) reasons.push(`Label contains "${kw}"`);
+      if (kw) {
+        reasons.push(`Label contains "${kw}"`);
+        hard = true;
+      }
       if (e.download || (e.href && FILE_EXT.test(e.href))) reasons.push('May download a file');
       if (e.type === 'file') reasons.push('Opens a file upload');
     }
   }
   if (call.args.risky === true) reasons.push('The model flagged this action as risky');
-  return { risky: reasons.length > 0, reasons };
+  return { risky: reasons.length > 0, reasons, hard };
 }

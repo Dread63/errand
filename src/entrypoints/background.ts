@@ -9,7 +9,7 @@ import { HistoryStore } from '@/lib/storage/history';
 import { chromeKV } from '@/lib/storage/kv';
 import { ProfileStore } from '@/lib/storage/profiles';
 import { SettingsStore } from '@/lib/storage/settings';
-import { SitePermissionStore } from '@/lib/storage/sites';
+import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
 
 export default defineBackground(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -23,6 +23,7 @@ export default defineBackground(() => {
         profiles: new ProfileStore(kv),
         settings: new SettingsStore(kv),
         siteStore: new SitePermissionStore(kv),
+        bypass: new BypassStore(kv, chromeKV(chrome.storage.session)),
         history: new HistoryStore(kv),
         makeLlm: (profile) => new OpenAIClient(profile),
         makeDriver: () =>

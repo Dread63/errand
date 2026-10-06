@@ -134,3 +134,5 @@
 .history-open { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; border: 0; background: transparent; padding: 8px 10px; }
 .history-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .history time { color: var(--muted); font-size: 11.5px; }
+.bypass { display: flex; gap: 6px; align-items: center; margin: 0 12px 6px; font-size: 11.5px; color: var(--muted); }
+.bypass.on { color: var(--accent); font-weight: 600; }
