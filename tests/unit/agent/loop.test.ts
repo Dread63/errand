@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { runAgent } from '@/lib/agent/loop';
+import { BypassStore } from '@/lib/storage/sites';
+import { memoryKV } from '@/lib/storage/kv';
 import { DetachedError, LlmError, TaskEndedError, ToolError } from '@/lib/errors';
 import type { StepTurn } from '@/lib/types';
 import { el, last, setup, task, textReply, toolCall } from './fakes';
@@ -172,6 +174,19 @@ describe('runAgent', () => {
     s.gate.riskyAnswers = [true];
     await runAgent(task, s.deps);
     expect(s.driver.performed.map((c) => c.args.id)).toEqual([2]);
+  });
+
+  it('bypass skips routine risky prompts but not sensitive or keyword ones', async () => {
+    const s = setup([toolCall('click', { id: 2 }), toolCall('click', { id: 4 }), toolCall('type', { id: 3, text: 'pw' }), toolCall('done', { summary: 'x' })]);
+    s.deps.bypass = new BypassStore(memoryKV(), memoryKV());
+    await s.deps.bypass.setOrigin('https://shop.test', true);
+    s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
+    s.driver.elements[4] = el(4, { name: 'Place order' });
+    s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
+    s.gate.riskyAnswers = [true, true];
+    await runAgent(task, s.deps);
+    expect(s.gate.riskyAnswers).toEqual([]);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([2, 4, 3]);
   });
 
   it('masks typed passwords in the saved step', async () => {

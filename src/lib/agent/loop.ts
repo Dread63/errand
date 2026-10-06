@@ -3,6 +3,7 @@ import type { LlmClient } from '../llm/client';
 import type { ChatMessage, ChatResult } from '../llm/types';
 import { classifyRisk, isSensitiveField } from '../policy/risky';
 import type { SitePolicy } from '../policy/sites';
+import type { BypassStore } from '../storage/sites';
 import type { ActionTarget, ObservationRecord, Profile, Settings, StepTurn, ToolCall, Turn } from '../types';
 import { logTiming, timed } from '../timing';
 import { originOf } from '../url';
@@ -18,6 +19,7 @@ export interface AgentDeps {
   driver: BrowserDriver;
   gate: UserGate;
   sites: SitePolicy;
+  bypass?: BypassStore;
   profile: Profile;
   settings: Settings;
   hooks: AgentHooks;
@@ -163,14 +165,18 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: s
   const risk = classifyRisk(call, target, d.settings.riskyKeywords);
   if (risk.risky) {
     step.risky = true;
-    await d.driver.highlight(target).catch(() => {});
-    const ok = await d.gate.risky({
-      description: step.label,
-      reasons: risk.reasons,
-      reason: typeof call.args.reason === 'string' ? call.args.reason : step.reasoning,
-    });
-    await d.driver.highlight(null).catch(() => {});
-    if (!ok) return REJECTED;
+    // Bypass skips the prompt for ordinary risky actions; credentials, payment and checkout labels still ask.
+    const skip = !risk.hard && !!d.bypass && (await d.bypass.applies(target.origin, target.tabId));
+    if (!skip) {
+      await d.driver.highlight(target).catch(() => {});
+      const ok = await d.gate.risky({
+        description: step.label,
+        reasons: risk.reasons,
+        reason: typeof call.args.reason === 'string' ? call.args.reason : step.reasoning,
+      });
+      await d.driver.highlight(null).catch(() => {});
+      if (!ok) return REJECTED;
+    }
   }
   let result: string;
   try {

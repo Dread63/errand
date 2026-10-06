@@ -6,7 +6,7 @@ import { type SiteDecision, SitePolicy } from '../policy/sites';
 import type { HistoryStore } from '../storage/history';
 import type { ProfileStore } from '../storage/profiles';
 import type { SettingsStore } from '../storage/settings';
-import type { SitePermissionStore } from '../storage/sites';
+import type { BypassStore, SitePermissionStore } from '../storage/sites';
 import type { Conversation, Profile } from '../types';
 import { setTimingEnabled, timed } from '../timing';
 import { activeProfile, supportsVisionFor } from '../ui/models';
@@ -21,6 +21,7 @@ export interface SessionDeps {
   profiles: ProfileStore;
   settings: SettingsStore;
   siteStore: SitePermissionStore;
+  bypass?: BypassStore;
   history: HistoryStore;
   makeLlm(profile: Profile): LlmClient;
   makeDriver(): DriverHandle;
@@ -177,6 +178,7 @@ export class PanelSession {
         driver,
         gate,
         sites: new SitePolicy(this.deps.siteStore),
+        bypass: this.deps.bypass,
         profile,
         settings,
         signal: abort.signal,

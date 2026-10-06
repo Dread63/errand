@@ -58,11 +58,23 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
       setDragging(false);
       void addRef.current(Array.from(e.dataTransfer!.files));
     };
+    // Paste works anywhere in the panel; items catches images that clipboardData.files misses.
+    const paste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.items ?? [])
+        .filter((i) => i.kind === 'file')
+        .map((i) => i.getAsFile())
+        .filter((f): f is File => !!f);
+      if (!files.length) return;
+      e.preventDefault();
+      void addRef.current(files);
+    };
+    document.addEventListener('paste', paste);
     document.addEventListener('dragenter', over);
     document.addEventListener('dragover', over);
     document.addEventListener('dragleave', leave);
     document.addEventListener('drop', drop);
     return () => {
+      document.removeEventListener('paste', paste);
       document.removeEventListener('dragenter', over);
       document.removeEventListener('dragover', over);
       document.removeEventListener('dragleave', leave);
@@ -105,13 +117,6 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             submit();
-          }
-        }}
-        onPaste={(e) => {
-          const files = Array.from(e.clipboardData.files);
-          if (files.length) {
-            e.preventDefault();
-            void addFiles(files);
           }
         }}
       />
