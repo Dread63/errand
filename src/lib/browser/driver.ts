@@ -46,8 +46,8 @@ export class ChromeDriver implements BrowserDriver {
   ) {
     this.fitImage = opts.fitImage ?? fitScreenshot;
     this.isMac = opts.isMac ?? /Mac/.test(globalThis.navigator?.userAgent ?? '');
-    this.settleMs = opts.settleMs ?? 300;
-    this.scrollStepMs = opts.scrollStepMs ?? 30;
+    this.settleMs = opts.settleMs ?? 150;
+    this.scrollStepMs = opts.scrollStepMs ?? 16;
     this.cdp.setConflictHandler((tabId) => this.suspendForeignFrames(tabId));
   }
 
@@ -107,16 +107,17 @@ export class ChromeDriver implements BrowserDriver {
     }
     await timed('observe: inject content script', () => this.content.ensureInjected(tabId));
     await timed('observe: guard foreign frames', () => this.suspendForeignFrames(tabId));
-    await timed('observe: attach debugger', () => this.cdp.ensure(tabId));
-    await timed('observe: show overlay', () => this.content.send(tabId, { type: 'overlay', op: 'active', on: true }));
-    const snapshot = await timed('observe: snapshot', () => this.content.send<PageSnapshot>(tabId, { type: 'snapshot', mode }));
+    // Attach+screenshot, overlay and snapshot are independent, so they run together.
+    const [snapshot, raw] = await Promise.all([
+      timed('observe: snapshot', () => this.content.send<PageSnapshot>(tabId, { type: 'snapshot', mode })),
+      timed('observe: attach debugger', async () => {
+        await this.cdp.ensure(tabId);
+        return screenshot ? timed('observe: screenshot', () => this.cdp.screenshot(tabId)) : undefined;
+      }),
+      timed('observe: show overlay', () => this.content.send(tabId, { type: 'overlay', op: 'active', on: true })),
+    ]);
     this.viewport = snapshot.viewport;
-    const shot = screenshot
-      ? await timed('observe: screenshot', async () => {
-          const raw = await this.cdp.screenshot(tabId);
-          return this.fitImage(raw, snapshot.viewport.w, snapshot.viewport.h).catch(() => raw);
-        })
-      : undefined;
+    const shot = raw ? await this.fitImage(raw, snapshot.viewport.w, snapshot.viewport.h).catch(() => raw) : undefined;
     return shot ? { snapshot, tabs, screenshot: shot } : { snapshot, tabs };
   }
 
@@ -205,7 +206,7 @@ export class ChromeDriver implements BrowserDriver {
 
   /** Wheel-scrolls in small steps so the page scrolls smoothly instead of jumping. */
   private async smoothWheel(tabId: number, x: number, y: number, deltaY: number): Promise<void> {
-    const steps = 8;
+    const steps = 5;
     for (let i = 0; i < steps; i++) {
       await this.cdp.wheel(tabId, x, y, deltaY / steps);
       await sleep(this.scrollStepMs);

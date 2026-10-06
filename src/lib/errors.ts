@@ -27,4 +27,6 @@ export class LlmError extends Error {
   ) {
     super(message);
   }
+  /** The gateway said this model speaks a different wire protocol (chat / responses / messages). */
+  protocolUnsupported = false;
 }

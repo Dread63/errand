@@ -124,7 +124,7 @@ export class AgentTabs {
   }
 
   async waitForLoad(tabId: number, timeoutMs = this.opts.loadTimeoutMs ?? 15_000): Promise<void> {
-    const poll = this.opts.pollMs ?? 200;
+    const poll = this.opts.pollMs ?? 50;
     const deadline = Date.now() + timeoutMs;
     await sleep(Math.min(poll, 100));
     while (Date.now() < deadline) {

@@ -3,7 +3,8 @@ import type { Profile } from '../types';
 import { logTiming } from '../timing';
 import { errMsg, sleep } from '../util';
 import { createSseParser } from './sse';
-import { applyChunk, finalize, fromCompletion, newAccumulator } from './stream';
+import { ADAPTERS, isProtocolUnsupported, PROTOCOLS, type Protocol } from './protocols';
+import { finalize, newAccumulator } from './stream';
 import type { ChatMessage, ChatResult, ToolSchema } from './types';
 
 export interface ChatRequest {
@@ -27,16 +28,28 @@ export interface ClientOptions {
   retryDelaysMs?: number[];
 }
 
-export function chatUrl(baseUrl: string): string {
+function apiRoot(baseUrl: string): string {
   let u = baseUrl.trim().replace(/\/+$/, '');
-  u = u.replace(/\/chat\/completions$/, '');
+  u = u.replace(/\/(chat\/completions|responses|messages)$/, '');
   if (!/\/v\d+$/.test(u)) u += '/v1';
-  return `${u}/chat/completions`;
+  return u;
+}
+
+export function chatUrl(baseUrl: string): string {
+  return `${apiRoot(baseUrl)}/chat/completions`;
+}
+
+export function protocolUrl(baseUrl: string, protocol: Protocol): string {
+  return `${apiRoot(baseUrl)}${ADAPTERS[protocol].path}`;
 }
 
 export function modelsUrl(baseUrl: string): string {
   return chatUrl(baseUrl).replace(/\/chat\/completions$/, '/models');
 }
+
+/** Protocol each model last worked with, so the fallback probe only costs one failed request per model. */
+const knownProtocols = new Map<string, Protocol>();
+const protocolKey = (p: Pick<Profile, 'baseUrl' | 'model'>) => `${apiRoot(p.baseUrl)}|${p.model}`;
 
 const defaultFetch: typeof fetch = (input, init) => fetch(input, init);
 
@@ -74,13 +87,33 @@ export class OpenAIClient implements LlmClient {
     this.retryDelays = opts.retryDelaysMs ?? [1000, 3000];
   }
 
+  /** Tries the model's known protocol first, then the others when the gateway says it doesn't speak it. */
   async chat(req: ChatRequest): Promise<ChatResult> {
+    const key = protocolKey(this.profile);
+    const first = knownProtocols.get(key) ?? 'chat';
+    const order = [first, ...PROTOCOLS.filter((p) => p !== first)];
+    let unsupported: LlmError | undefined;
+    for (const protocol of order) {
+      try {
+        const result = await this.chatWith(protocol, req);
+        knownProtocols.set(key, protocol);
+        return result;
+      } catch (e) {
+        if (!(e instanceof LlmError) || !e.protocolUnsupported) throw e;
+        unsupported ??= e;
+        logTiming(`model: ${protocol} protocol unsupported; trying next`, 0);
+      }
+    }
+    throw unsupported ?? new LlmError('Model request failed', false);
+  }
+
+  private async chatWith(protocol: Protocol, req: ChatRequest): Promise<ChatResult> {
     let last: LlmError | undefined;
     for (let attempt = 0; attempt <= this.retryDelays.length; attempt++) {
       if (attempt > 0) await sleep(this.retryDelays[attempt - 1], req.signal);
       const t0 = performance.now();
       try {
-        return await this.once(req);
+        return await this.once(protocol, req);
       } catch (e) {
         if (req.signal?.aborted) throw e;
         const err = e instanceof LlmError ? e : new LlmError(errMsg(e), true);
@@ -92,7 +125,7 @@ export class OpenAIClient implements LlmClient {
     throw last ?? new LlmError('Model request failed', false);
   }
 
-  private async once(req: ChatRequest): Promise<ChatResult> {
+  private async once(protocol: Protocol, req: ChatRequest): Promise<ChatResult> {
     const names = req.tools.map((t) => t.function.name);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort(req.signal?.reason);
@@ -111,21 +144,15 @@ export class OpenAIClient implements LlmClient {
     const t0 = performance.now();
     const since = () => performance.now() - t0;
     try {
-      const body = {
-        model: this.profile.model,
-        messages: req.messages,
-        stream: true,
-        stream_options: { include_usage: true },
-        ...(this.profile.reasoningEffort ? { reasoning_effort: this.profile.reasoningEffort } : {}),
-        ...(req.tools.length ? { tools: req.tools, tool_choice: 'auto' } : {}),
-      };
+      const adapter = ADAPTERS[protocol];
+      const body = adapter.body({ profile: this.profile, messages: req.messages, tools: req.tools, sessionId: req.sessionId });
       let res: Response;
       try {
-        res = await this.fetchImpl(chatUrl(this.profile.baseUrl), {
+        res = await this.fetchImpl(protocolUrl(this.profile.baseUrl, protocol), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(this.profile.apiKey),
+            ...adapter.headers(this.profile.apiKey),
             ...(req.sessionId ? { 'x-opencode-session': req.sessionId } : {}),
           },
           body: JSON.stringify(body),
@@ -139,10 +166,12 @@ export class OpenAIClient implements LlmClient {
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         const retryable = res.status === 408 || res.status === 429 || res.status >= 500;
-        throw new LlmError(`HTTP ${res.status}: ${text.slice(0, 300)}`, retryable, res.status);
+        const err = new LlmError(`HTTP ${res.status}: ${text.slice(0, 300)}`, retryable && !isProtocolUnsupported(res.status, text), res.status);
+        err.protocolUnsupported = isProtocolUnsupported(res.status, text);
+        throw err;
       }
       if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) {
-        return fromCompletion(await res.json(), names);
+        return adapter.fromCompletion(await res.json(), names);
       }
       if (!res.body) throw new LlmError('Empty response body', true);
 
@@ -162,17 +191,13 @@ export class OpenAIClient implements LlmClient {
         } catch {
           return;
         }
-        const err = (json as { error?: { message?: string } }).error;
-        if (err) throw new LlmError(`Server error: ${err.message ?? JSON.stringify(err)}`, true);
-        const delta = (json as { choices?: Array<{ delta?: Record<string, unknown> }> }).choices?.[0]?.delta;
-        const reasoning = delta?.reasoning_content ?? delta?.reasoning;
-        if (typeof reasoning === 'string' && reasoning) {
+        const { text, reasoning } = adapter.applyEvent(acc, json);
+        if (reasoning) {
           if (firstReasoning < 0) firstReasoning = since();
           reasoningChars += reasoning.length;
           req.onReasoning?.(reasoning);
         }
-        if (firstOutput < 0 && (delta?.content || delta?.tool_calls)) firstOutput = since();
-        const text = applyChunk(acc, json);
+        if (firstOutput < 0 && (text || acc.tools.size)) firstOutput = since();
         if (text) req.onDelta?.(text);
       });
       const reader = res.body.getReader();
