@@ -17,11 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/store/screenshot-1-task.png" width="800" alt="Errand filling in a form, with its cursor on the page and its steps in the side panel">
-</p>
-
-<p align="center">
-  <video src="docs/demo/demo.mp4" width="800" controls muted></video>
+  <a href="https://youtu.be/pM8CUjJwu2s"><img src="https://img.youtube.com/vi/pM8CUjJwu2s/maxresdefault.jpg" width="800" alt="Watch the Errand demo on YouTube"></a>
 </p>
 
 ## What it does
