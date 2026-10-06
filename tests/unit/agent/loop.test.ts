@@ -33,7 +33,7 @@ describe('runAgent', () => {
     expect(s.driver.performed.map((c) => c.name)).toEqual(['click']);
     expect(last(turns)).toEqual({ kind: 'assistant', text: 'All done' });
     const [click] = steps(turns);
-    expect(click).toMatchObject({ label: 'Click button "Button 1"', reasoning: 'Clicking the button', result: 'ok click', risky: false });
+    expect(click).toMatchObject({ label: 'Click the "Button 1" button', reasoning: 'Clicking the button', result: 'ok click', risky: false });
     expect(click.call.id).toBe(click.id);
     expect(click.observation?.detail).toContain('[1] button "Button 1"');
     expect(s.turnsSeen.length).toBeGreaterThan(1);
@@ -130,7 +130,7 @@ describe('runAgent', () => {
     s.gate.riskyAnswers = [false];
     const turns = await runAgent(task, s.deps);
     expect(s.driver.performed).toEqual([]);
-    expect(steps(turns)[0]).toMatchObject({ risky: true, label: 'Click button "Place order"' });
+    expect(steps(turns)[0]).toMatchObject({ risky: true, label: 'Click the "Place order" button' });
     expect(steps(turns)[0].result).toMatch(/rejected/);
     expect(s.driver.highlights[0]?.element?.id).toBe(2);
     expect(s.driver.highlights[1]).toBeNull();

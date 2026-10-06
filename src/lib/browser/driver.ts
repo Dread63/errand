@@ -1,5 +1,5 @@
 import { MODE_LIMITS } from '../agent/modes';
-import { describeCall } from '../agent/tools';
+import { pillLabel } from '../agent/tools';
 import type { BrowserDriver } from '../agent/ports';
 import type { ContentRequest, ResolveResult } from '../content/protocol';
 import { ToolError } from '../errors';
@@ -189,6 +189,12 @@ export class ChromeDriver implements BrowserDriver {
     await this.content.send(tabId, { type: 'guard', on: true }).catch(() => {});
   }
 
+  private async clearRing(tabId: number): Promise<void> {
+    if (!this.ringShown) return;
+    this.ringShown = false;
+    await this.overlay(tabId, { type: 'overlay', op: 'hover', rect: null });
+  }
+
   private async pointTo(t: ActionTarget): Promise<{ x: number; y: number }> {
     if (!t.point) throw new ToolError('This action needs an element id or x and y.');
     await this.overlay(t.tabId, { type: 'overlay', op: 'move', x: t.point.x, y: t.point.y, label: this.stepLabel });
@@ -212,14 +218,14 @@ export class ChromeDriver implements BrowserDriver {
   }
 
   async perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
-    this.stepLabel = describeCall(call, target);
+    this.stepLabel = pillLabel(call, target);
     this.ringShown = false;
     try {
       return await this.act(call, target, mode);
     } finally {
       // The ring marks the element being acted on; once the action is over it must not linger
       // (it is fixed-position, so it would also drift away from the element as the page scrolls).
-      if (this.ringShown && call.name !== 'hover') await this.overlay(target.tabId, { type: 'overlay', op: 'hover', rect: null });
+      if (call.name !== 'hover') await this.clearRing(target.tabId);
     }
   }
 
@@ -231,6 +237,7 @@ export class ChromeDriver implements BrowserDriver {
         const p = await this.pointTo(target);
         await this.cdp.click(tabId, p.x, p.y);
         await this.overlay(tabId, { type: 'overlay', op: 'click', x: p.x, y: p.y });
+        await this.clearRing(tabId); // the ring marks the click itself, not the page load that follows
         await this.settle(tabId);
         return `Clicked ${label(target)}.`;
       }
@@ -243,6 +250,7 @@ export class ChromeDriver implements BrowserDriver {
         if (target.point) {
           const p = await this.pointTo(target);
           await this.cdp.click(tabId, p.x, p.y);
+          await this.clearRing(tabId);
         }
         // Select-all is only safe in a real text field; in a spreadsheet it would select every cell.
         if (a.clear === true || (a.id !== undefined && a.clear !== false)) {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The on-page cursor pill now says only what kind of element is being used (e.g. "Clicking a button"), without field names or typed text, and stays sharp while moving. Step descriptions are in plain English (`Click the "Save" button`) with no HTML jargon or coordinates. The cursor is larger with a glow, and the page edge has a soft glow instead of a thin line.
+
 ## 1.0.0 — 2026-10-05
 
 First public release, as **Errand** (previously the private "Browser Control" project).

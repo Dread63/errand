@@ -74,7 +74,7 @@ test('fills a spreadsheet: clicks a cell by coordinates and types a whole table 
   expect(JSON.stringify(servers.requests[0].messages)).toContain('Screenshot: ');
   // The finished task's steps are collapsed into one activity card; one click shows them.
   await panel.getByRole('button', { name: /Worked through \d+ steps/ }).click();
-  await expect(panel.getByText('Type "Item⇥Cost⏎Rent⇥1200⏎Food⇥450⏎Total⇥=SUM(B2:B3)⏎" into textbox')).toBeVisible();
+  await expect(panel.getByText('Type "Item⇥Cost⏎Rent⇥1200⏎Food⇥450⏎Total⇥=SUM(B2:B3)⏎" into')).toBeVisible();
 });
 
 test.describe('on a high-DPI screen', () => {

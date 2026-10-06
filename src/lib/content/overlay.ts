@@ -7,18 +7,18 @@ const ACCENT = '124, 92, 255';
 const STYLE = `
 :host { all: initial; }
 .layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; }
-.border { position: fixed; inset: 0; border: 2px solid rgba(${ACCENT}, .75); box-shadow: inset 0 0 28px rgba(${ACCENT}, .28); border-radius: 6px; opacity: 0; transition: opacity 250ms; }
+.border { position: fixed; inset: 0; box-shadow: inset 0 0 0 2px rgba(${ACCENT}, .55), inset 0 0 18px 4px rgba(${ACCENT}, .5), inset 0 0 64px 10px rgba(${ACCENT}, .28); opacity: 0; transition: opacity 250ms; }
 .border.on { opacity: 1; }
-.cursor { position: fixed; left: 0; top: 0; opacity: 0; transition: opacity 180ms; will-change: transform; }
+.cursor { position: fixed; left: 0; top: 0; opacity: 0; transition: opacity 180ms; }
 .cursor.on { opacity: 1; }
-.arrow { position: absolute; left: -4px; top: -3px; width: 24px; height: 24px; transform-origin: 4px 3px; transition: transform 140ms cubic-bezier(.3,.7,.4,1.4); filter: drop-shadow(0 2px 3px rgba(0,0,0,.28)); }
+.arrow { position: absolute; left: -5px; top: -4px; width: 34px; height: 34px; transform-origin: 5px 4px; transition: transform 140ms cubic-bezier(.3,.7,.4,1.4); filter: drop-shadow(0 0 3px rgba(${ACCENT}, .85)) drop-shadow(0 2px 3px rgba(0,0,0,.3)); }
 .cursor.on .arrow { animation: glow 2.4s ease-in-out infinite; }
 .arrow.press { transform: scale(.82); }
-@keyframes glow { 50% { filter: drop-shadow(0 0 6px rgba(${ACCENT}, .55)) drop-shadow(0 2px 3px rgba(0,0,0,.28)); } }
-.tag { position: absolute; left: 18px; top: 20px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 3px 9px; border-radius: 999px; background: rgb(${ACCENT}); color: #fff; font: 600 11.5px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; box-shadow: 0 2px 8px rgba(${ACCENT}, .35); opacity: 0; transform: translateY(-2px); transition: opacity 150ms, transform 150ms; }
-.tag.on { opacity: 1; transform: none; }
-.tag.left { left: auto; right: 10px; }
-.tag.above { top: auto; bottom: 10px; }
+@keyframes glow { 50% { filter: drop-shadow(0 0 6px rgba(${ACCENT}, .9)) drop-shadow(0 2px 3px rgba(0,0,0,.3)); } }
+.tag { position: absolute; left: 26px; top: 30px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 4px 11px; border-radius: 999px; background: rgb(${ACCENT}); color: #fff; font: 600 13px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; letter-spacing: .01em; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; box-shadow: 0 0 14px rgba(${ACCENT}, .55), 0 2px 6px rgba(0,0,0,.2); visibility: hidden; }
+.tag.on { visibility: visible; }
+.tag.left { left: auto; right: 14px; }
+.tag.above { top: auto; bottom: 14px; }
 .ring { position: fixed; display: none; border: 2px solid rgba(${ACCENT}, .85); border-radius: 8px; background: rgba(${ACCENT}, .07); transition: all 160ms ease-out; }
 .highlight { position: fixed; display: none; border: 2px solid #f5a524; border-radius: 8px; background: rgba(245, 165, 36, .12); }
 .label { position: absolute; top: -26px; left: 0; background: #f5a524; color: #111; font: 600 12px/1.6 -apple-system, "Segoe UI", system-ui, sans-serif; padding: 0 8px; border-radius: 6px; white-space: nowrap; }
@@ -57,7 +57,7 @@ export function moveDuration(dist: number): number {
 
 /** Which side of the cursor the label pill goes so it stays inside the viewport. */
 export function labelPlacement(x: number, y: number, w: number, h: number, vw: number, vh: number): { left: boolean; above: boolean } {
-  return { left: x + 18 + w > vw - 8, above: y + 20 + h > vh - 8 };
+  return { left: x + 26 + w > vw - 8, above: y + 30 + h > vh - 8 };
 }
 
 function box(el: HTMLElement, rect: Rect | null): void {
@@ -120,7 +120,8 @@ export class Overlay {
   }
 
   private place(x: number, y: number): void {
-    this.cursor.style.transform = `translate(${x}px, ${y}px)`;
+    this.cursor.style.left = `${Math.round(x)}px`;
+    this.cursor.style.top = `${Math.round(y)}px`;
   }
 
   private reducedMotion(): boolean {
@@ -136,8 +137,8 @@ export class Overlay {
 
   private placeLabel(x: number, y: number): void {
     const win = this.doc.defaultView;
-    const w = this.tag.offsetWidth || this.tag.textContent!.length * 7 + 18;
-    const p = labelPlacement(x, y, w, 22, win?.innerWidth ?? 1e6, win?.innerHeight ?? 1e6);
+    const w = this.tag.offsetWidth || this.tag.textContent!.length * 8 + 22;
+    const p = labelPlacement(x, y, w, 28, win?.innerWidth ?? 1e6, win?.innerHeight ?? 1e6);
     this.tag.classList.toggle('left', p.left);
     this.tag.classList.toggle('above', p.above);
   }
@@ -167,9 +168,9 @@ export class Overlay {
     const mid = reduced ? { x: (from.x + x) / 2, y: (from.y + y) / 2 } : arcPoint(from, { x, y });
     const anim = this.cursor.animate?.(
       [
-        { transform: `translate(${from.x}px, ${from.y}px)` },
-        { transform: `translate(${mid.x}px, ${mid.y}px)`, offset: 0.5 },
-        { transform: `translate(${x}px, ${y}px)` },
+        { left: `${Math.round(from.x)}px`, top: `${Math.round(from.y)}px` },
+        { left: `${Math.round(mid.x)}px`, top: `${Math.round(mid.y)}px`, offset: 0.5 },
+        { left: `${Math.round(x)}px`, top: `${Math.round(y)}px` },
       ],
       { duration: ms, easing: 'cubic-bezier(.45,0,.2,1)' },
     );

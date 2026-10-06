@@ -1,7 +1,7 @@
 import { ToolError } from '../errors';
 import type { ToolSchema } from '../llm/types';
 import { isSensitiveField } from '../policy/risky';
-import type { ActionTarget, ToolCall } from '../types';
+import type { ActionTarget, ElementInfo, ToolCall } from '../types';
 import { normalizeNavUrl } from '../url';
 import { clip } from '../util';
 
@@ -134,12 +134,25 @@ export function validateCall(call: ToolCall, vision = false): ToolCall {
   return { id: call.id, name: call.name, args };
 }
 
+/** Plain-English nouns for element roles. Anything else (generic, clickable, gridcell…) is described by its name alone. */
+const ROLE_WORD: Record<string, string> = {
+  button: 'button', link: 'link', textbox: 'text box', searchbox: 'search box', combobox: 'dropdown', listbox: 'list',
+  option: 'option', checkbox: 'checkbox', radio: 'radio button', switch: 'switch', tab: 'tab', menuitem: 'menu item',
+  slider: 'slider', img: 'image', heading: 'heading',
+};
+
+function plainWhat(el: ElementInfo | undefined, a: Record<string, unknown>): string {
+  if (!el) return a.id !== undefined ? 'an item on the page' : a.x !== undefined ? 'the page' : 'the current field';
+  const word = ROLE_WORD[el.role];
+  const name = clip(el.name, 60);
+  if (name) return word ? `the "${name}" ${word}` : `"${name}"`;
+  return word ? `a ${word}` : 'an item on the page';
+}
+
 export function describeCall(call: ToolCall, target?: ActionTarget): string {
   const el = target?.element;
   const a = call.args;
-  const at = a.x !== undefined ? ` at (${a.x}, ${a.y})` : '';
-  const what =
-    (el ? `${el.role} "${clip(el.name || el.tag, 60)}"` : a.id !== undefined ? `element [${a.id}]` : a.x !== undefined ? 'the page' : 'the focused element') + at;
+  const what = plainWhat(el, a);
   switch (call.name) {
     case 'click':
       return `Click ${what}`;
@@ -152,7 +165,7 @@ export function describeCall(call: ToolCall, target?: ActionTarget): string {
     case 'select':
       return `Select "${a.value}" in ${what}`;
     case 'scroll':
-      return what ? `Scroll to ${what}` : `Scroll ${a.direction}`;
+      return a.id !== undefined ? `Scroll to ${what}` : `Scroll ${a.direction}`;
     case 'key':
       return `Press ${a.combo}${typeof a.repeat === 'number' && a.repeat > 1 ? ` ×${a.repeat}` : ''}`;
     case 'navigate':
@@ -175,5 +188,31 @@ export function describeCall(call: ToolCall, target?: ActionTarget): string {
       return 'Finish';
     default:
       return 'Invalid tool call';
+  }
+}
+
+const ROLE_NOUN: Record<string, string> = {
+  button: 'a button', link: 'a link', textbox: 'a text field', searchbox: 'a search box', combobox: 'a dropdown', listbox: 'a list',
+  option: 'an option', checkbox: 'a checkbox', radio: 'a radio button', switch: 'a switch', tab: 'a tab', menuitem: 'a menu item',
+  slider: 'a slider', img: 'an image', heading: 'a heading', gridcell: 'a cell', cell: 'a cell',
+};
+
+/** Short, generic description for the on-page cursor pill: what kind of element, never its name or typed text. */
+export function pillLabel(call: ToolCall, target?: ActionTarget): string {
+  const el = target?.element;
+  const noun = el ? (ROLE_NOUN[el.role] ?? 'an item') : call.args.x !== undefined ? 'the page' : 'an item';
+  switch (call.name) {
+    case 'click':
+      return `Clicking ${noun}`;
+    case 'hover':
+      return `Hovering over ${noun}`;
+    case 'type':
+      return el ? `Typing into ${noun}` : 'Typing';
+    case 'select':
+      return `Choosing from ${noun}`;
+    case 'scroll':
+      return 'Scrolling';
+    default:
+      return describeCall(call, target); // key, navigate, etc. carry no element or field names
   }
 }
