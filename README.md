@@ -16,9 +16,7 @@
   <a href="PRIVACY.md">Privacy</a>
 </p>
 
-<p align="center">
-  <a href="https://youtu.be/pM8CUjJwu2s"><img src="https://img.youtube.com/vi/pM8CUjJwu2s/maxresdefault.jpg" width="800" alt="Watch the Errand demo on YouTube"></a>
-</p>
+https://github.com/user-attachments/assets/faa13595-a07a-439e-b3a5-344cf3a05c42
 
 ## What it does
 
