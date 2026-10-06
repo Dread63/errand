@@ -89,9 +89,16 @@ const RESULTS_FILE = 'test-results/live-results.jsonl';
 async function driveGates(panel: Page, gates: string[], deadline: number): Promise<void> {
   let retries = 0;
   await panel.getByTestId('composer-stop').waitFor({ timeout: 10_000 }).catch(() => {});
-  while (Date.now() < deadline && (await panel.getByTestId('composer-stop').isVisible())) {
+  // The stop button can blink out between steps, so "finished" means it stayed hidden for a while.
+  let hiddenSince = 0;
+  for (;;) {
+    if (Date.now() >= deadline) break;
     const dialog = panel.getByRole('dialog').first();
-    if (await dialog.isVisible().catch(() => false)) {
+    const gated = await dialog.isVisible().catch(() => false);
+    if (gated || (await panel.getByTestId('composer-stop').isVisible())) hiddenSince = 0;
+    else if ((hiddenSince ||= Date.now()) && Date.now() - hiddenSince > 1_500) break;
+
+    if (gated) {
       // Short timeouts: a gate can close or be replaced between reading it and clicking, and a
       // blocked click must not eat the whole test budget. The loop simply looks again.
       const t = { timeout: 5_000 };
@@ -120,10 +127,15 @@ function collectTimings(sw: Worker) {
   sw.on('console', (m) => {
     if (m.text().startsWith('[timing]')) lines.push(m.text());
   });
-  return () => {
+  return (name = '') => {
+    if (name) {
+      fs.mkdirSync('test-results', { recursive: true });
+      fs.writeFileSync(`test-results/timing-${name.replace(/\W+/g, '-')}.log`, lines.join('\n'));
+    }
     const model = lines.map((l) => /step \d+: model \(total.*?\): (\d+)ms/.exec(l)).filter((m) => !!m).map((m) => Number(m[1]) / 1000);
     const reasoning = lines.map((l) => /first reasoning token \((\d+) chars/.exec(l)).filter((m) => !!m).map((m) => Number(m[1]));
     return {
+      steps: model.length,
       modelSeconds: model.reduce((a, b) => a + b, 0),
       slowestModelSeconds: Math.max(0, ...model),
       reasoningChars: reasoning.reduce((a, b) => a + b, 0),
@@ -177,9 +189,9 @@ test.describe('live agent tasks', () => {
         await driveGates(panel, gates, t0 + 300_000);
         const seconds = (Date.now() - t0) / 1000;
 
-        const steps = await panel.locator('.chat .step').count();
-        const answer = (await panel.locator('.msg.assistant').last().textContent().catch(() => '')) ?? '';
-        const result: Result = { task: task.name, effort, passed: false, seconds, steps, ...timings(), gates };
+        const answer = (await panel.locator('.chat .md').last().textContent({ timeout: 2_000 }).catch(() => '')) ?? '';
+        const result: Result = { task: task.name, effort, passed: false, seconds, ...timings(`${task.name}-${effort}`), gates };
+        const { steps } = result;
         console.log(`[${task.name} / ${effort}] ${seconds.toFixed(1)}s, ${steps} steps. Answer: ${answer.slice(0, 300)}`);
         for (const g of gates) console.log(`  gate: ${g}`);
 

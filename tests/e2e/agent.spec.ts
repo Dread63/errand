@@ -84,3 +84,35 @@ test('clicking an element hidden under an open menu reports the menu instead of 
   expect(JSON.stringify(servers.requests[1].messages)).toContain('is covered by listbox \\"Search options\\"');
   await expect(page.locator('#cb')).toHaveAttribute('aria-checked', 'true');
 });
+
+test('several form-field calls in one model reply run in order, and anything that may change the page ends the batch', async ({ context, sw, extensionId, servers }) => {
+  await configure(sw, servers.llmUrl, [servers.siteUrl]);
+  servers.setScript([
+    {
+      name: 'type',
+      arguments: { id: 1, text: 'Ada Lovelace' },
+      also: [
+        { name: 'type', arguments: { id: 2, text: 'ada@example.com' } },
+        { name: 'select', arguments: { id: 3, value: 'United Kingdom' } },
+        { name: 'click', arguments: { id: 5 } }, // phone radio: does not change the page, so the batch goes on
+        { name: 'scroll', arguments: { direction: 'down' } }, // may move things: ends the batch
+        { name: 'type', arguments: { id: 7, text: 'must be skipped' } },
+      ],
+    },
+    { name: 'done', arguments: { summary: 'Filled.' } },
+  ]);
+  const page = await context.newPage();
+  await page.goto(`${servers.siteUrl}/signup.html`);
+  const panel = await openPanel(context, sw, extensionId, await tabIdFor(sw, page.url()));
+
+  await panel.getByTestId('composer-input').fill('Fill the form');
+  await panel.getByTestId('composer-send').click();
+  await expect(panel.getByText('Filled.')).toBeVisible();
+
+  await expect(page.locator('[name=name]')).toHaveValue('Ada Lovelace');
+  await expect(page.locator('[name=email]')).toHaveValue('ada@example.com');
+  await expect(page.locator('[name=country]')).toHaveValue('uk');
+  await expect(page.locator('[name=contact][value=phone]')).toBeChecked();
+  await expect(page.locator('[name=message]')).toHaveValue('');
+  expect(servers.requests).toHaveLength(2); // one reply filled four fields; the second only finished
+});

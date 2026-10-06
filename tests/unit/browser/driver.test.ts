@@ -103,7 +103,8 @@ describe('ChromeDriver.observe', () => {
     expect(o.snapshot.elements).toHaveLength(1);
     expect(o.screenshot).toBeUndefined();
     // Other extensions' frames are suspended before attaching, since they block the debugger.
-    expect(log).toEqual(['content.inject', 'content.guard:on', 'cdp.ensure', 'content.overlay.active', 'content.snapshot']);
+    expect(log.slice(0, 2)).toEqual(['content.inject', 'content.guard:on']);
+    expect(log.slice(2).sort()).toEqual(['cdp.ensure', 'content.overlay.active', 'content.snapshot']);
     // Screenshots are scaled to the CSS viewport so x/y from the model line up with the page.
     expect((await driver.observe({ mode: 'compact', screenshot: true })).screenshot).toBe('data:image/jpeg;base64,SHOT#fit');
   });
@@ -323,8 +324,8 @@ describe('ChromeDriver.perform', () => {
     log.length = 0;
     await driver.perform(call('scroll', { direction: 'down' }), t, 'compact');
     expect(log).toContain('content.overlay.move:500,400');
-    // Smooth: the 640px scroll is split into 8 small wheel steps instead of one jump.
-    expect(log.filter((l) => l.startsWith('cdp.wheel'))).toEqual(Array(8).fill('cdp.wheel:500,400,80'));
+    // Smooth: the 640px scroll is split into 5 small wheel steps instead of one jump.
+    expect(log.filter((l) => l.startsWith('cdp.wheel'))).toEqual(Array(5).fill('cdp.wheel:500,400,128'));
   });
 
   it('wraps read_text as untrusted page content', async () => {

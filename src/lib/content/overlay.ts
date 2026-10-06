@@ -50,9 +50,9 @@ export function arcPoint(from: Pt, to: Pt): Pt {
   return { x: mid.x + (-dy / dist) * bend, y: mid.y + (dx / dist) * bend };
 }
 
-/** 180ms for tiny moves up to 450ms for long ones. */
+/** 100ms for tiny moves up to 260ms for long ones; the agent waits for the cursor, so this is time added to every action. */
 export function moveDuration(dist: number): number {
-  return Math.round(Math.min(450, 180 + Math.sqrt(dist) * 9));
+  return Math.round(Math.min(260, 100 + Math.sqrt(dist) * 6));
 }
 
 /** Which side of the cursor the label pill goes so it stays inside the viewport. */
