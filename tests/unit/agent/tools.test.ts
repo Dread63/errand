@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeCall, TOOL_NAMES, TOOL_SCHEMAS, toolSchemas, validateCall } from '@/lib/agent/tools';
+import { describeCall, pillLabel, TOOL_NAMES, TOOL_SCHEMAS, toolSchemas, validateCall } from '@/lib/agent/tools';
 import { ToolError } from '@/lib/errors';
 import type { ElementInfo, ToolCall } from '@/lib/types';
 
@@ -80,21 +80,35 @@ describe('describeCall', () => {
   });
   it('uses the element label when known', () => {
     expect(describeCall(c('click', { id: 3 }), { tabId: 1, origin: 'o', element: field({ role: 'button', name: 'Add to cart' }) })).toBe(
-      'Click button "Add to cart"',
+      'Click the "Add to cart" button',
     );
-    expect(describeCall(c('click', { id: 3 }))).toBe('Click element [3]');
+    expect(describeCall(c('click', { id: 3 }))).toBe('Click an item on the page');
   });
   it('describes coordinate, focused-element and repeated actions', () => {
-    expect(describeCall(c('click', { x: 120, y: 45 }))).toBe('Click the page at (120, 45)');
+    expect(describeCall(c('click', { x: 120, y: 45 }))).toBe('Click the page');
     expect(describeCall(c('click', { x: 120, y: 45 }), { tabId: 1, origin: 'o', element: field({ role: 'gridcell', name: 'A1' }) })).toBe(
-      'Click gridcell "A1" at (120, 45)',
+      'Click "A1"',
     );
-    expect(describeCall(c('type', { text: 'Rent\t1200\nFood' }))).toBe('Type "Rent⇥1200⏎Food" into the focused element');
+    expect(describeCall(c('type', { text: 'Rent\t1200\nFood' }))).toBe('Type "Rent⇥1200⏎Food" into the current field');
     expect(describeCall(c('key', { combo: 'Tab', repeat: 3 }))).toBe('Press Tab ×3');
   });
   it('masks text typed into sensitive fields', () => {
     expect(describeCall(c('type', { id: 3, text: 'hunter2' }), { tabId: 1, origin: 'o', element: field({ type: 'password' }) })).toBe(
-      'Type "••••••" into textbox "Password"',
+      'Type "••••••" into the "Password" text box',
     );
+  });
+});
+
+describe('pillLabel', () => {
+  const el = (over: Partial<ElementInfo>): ElementInfo => ({
+    id: 3, tag: 'input', role: 'textbox', name: 'Password', inForm: true, isSubmit: false, download: false,
+    rect: { x: 0, y: 0, w: 1, h: 1 }, ...over,
+  });
+  const t = (element: ElementInfo) => ({ tabId: 1, origin: 'o', element });
+  it('names only the kind of element, never its name or the typed text', () => {
+    expect(pillLabel(c('click', { id: 3 }), t(el({ role: 'button', name: 'Place order' })))).toBe('Clicking a button');
+    expect(pillLabel(c('type', { id: 3, text: 'hunter2' }), t(el({})))).toBe('Typing into a text field');
+    expect(pillLabel(c('click', { id: 3 }), t(el({ role: 'weirdrole' })))).toBe('Clicking an item');
+    expect(pillLabel(c('click', { x: 1, y: 2 }))).toBe('Clicking the page');
   });
 });

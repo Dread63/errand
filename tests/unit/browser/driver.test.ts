@@ -252,11 +252,19 @@ describe('ChromeDriver.perform', () => {
     ]);
   });
 
+  it('clears the ring right after the click, before waiting for the page to settle', async () => {
+    const { driver, log } = setup();
+    const t = await driver.target(call('click', { id: 4 }));
+    log.length = 0;
+    await driver.perform(call('click', { id: 4 }), t, 'compact');
+    expect(log.indexOf('content.overlay.hover:clear')).toBe(log.indexOf('content.overlay.click:60,35') + 1);
+  });
+
   it('sends the step description with cursor moves so the page can label the cursor', async () => {
     const { driver, labels } = setup();
     const t = await driver.target(call('click', { id: 4 }));
     await driver.perform(call('click', { id: 4 }), t, 'compact');
-    expect(labels).toEqual(['Click button "Go"']);
+    expect(labels).toEqual(['Clicking a button']);
   });
 
   it('keeps the label off focus-follow moves after a key press', async () => {
@@ -285,7 +293,8 @@ describe('ChromeDriver.perform', () => {
     const t = await driver.target(call('type', { id: 4 }));
     log.length = 0;
     await driver.perform(call('type', { id: 4, text: 'x' }), t, 'compact');
-    expect(log.at(-1)).toBe('content.overlay.hover:clear');
+    expect(log.filter((l) => l.endsWith('hover:clear'))).toHaveLength(1);
+    expect(log.indexOf('content.overlay.hover:clear')).toBeLessThan(log.indexOf('cdp.insert:x'));
   });
 
   it('moves the cursor to the focused element before pressing a key', async () => {

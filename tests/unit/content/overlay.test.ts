@@ -20,7 +20,8 @@ describe('Overlay', () => {
   it('moves the cursor and resolves after the animation', async () => {
     const o = new Overlay(document, 0);
     await o.moveTo(120, 80);
-    expect((o.shadow.querySelector('.cursor') as HTMLElement).style.transform).toBe('translate(120px, 80px)');
+    const cursor = o.shadow.querySelector('.cursor') as HTMLElement;
+    expect([cursor.style.left, cursor.style.top]).toEqual(['120px', '80px']);
   });
 
   it('shows and hides highlight boxes with a label', () => {
