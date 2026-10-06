@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dread63/errand/blob/main/docs/demo/demo.mp4"><img src="docs/demo/poster.jpg" width="800" alt="Watch the demo: Errand filling a grocery cart (86s)"></a>
+  <a href="https://youtu.be/pM8CUjJwu2s"><img src="docs/demo/poster.jpg" width="800" alt="Watch the demo: Errand filling a grocery cart (86s)"></a>
 </p>
 
 ## What it does
