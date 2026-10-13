@@ -254,13 +254,16 @@ function SitesSection() {
 }
 
 function BypassSection() {
-  const store = useMemo(() => new BypassStore(chromeKV(), chromeKV(chrome.storage.session)), []);
+  const store = useMemo(() => new BypassStore(chromeKV()), []);
   const [origins, setOrigins] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const refresh = useCallback(async () => setOrigins(await store.origins()), [store]);
   useEffect(() => {
     void refresh();
+    const onChanged = () => void refresh();
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
   }, [refresh]);
 
   async function add() {

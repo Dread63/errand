@@ -8,6 +8,8 @@ export type GateRequest =
 
 export type PanelToBg =
   | { type: 'start'; conversationId: string | null; text: string; attachments: Attachment[]; tabId: number }
+  /** Creates the agent's tab group around this tab ahead of any prompt; `fresh` forces a new one (new chat). */
+  | { type: 'prepare'; tabId: number; fresh: boolean }
   | { type: 'stop' }
   | { type: 'gate'; requestId: string; value: string | boolean };
 
@@ -16,6 +18,8 @@ export type BgToPanel =
   | { type: 'delta'; text: string }
   /** The model's thinking, streamed before its answer. */
   | { type: 'reasoning'; text: string }
+  /** The Chrome tab group the agent works in. */
+  | { type: 'group'; groupId: number }
   | { type: 'status'; status: 'running' | 'idle' }
   | { type: 'gate'; requestId: string; request: GateRequest }
   | { type: 'gate_closed'; requestId: string }

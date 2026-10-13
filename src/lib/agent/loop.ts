@@ -166,7 +166,7 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: s
   if (risk.risky) {
     step.risky = true;
     // Bypass skips the prompt for ordinary risky actions; credentials, payment and checkout labels still ask.
-    const skip = !risk.hard && !!d.bypass && (await d.bypass.applies(target.origin, target.tabId));
+    const skip = !risk.hard && !!d.bypass && (await d.bypass.applies(target.origin));
     if (!skip) {
       await d.driver.highlight(target).catch(() => {});
       const ok = await d.gate.risky({

@@ -24,36 +24,22 @@ export class SitePermissionStore {
   }
 }
 
-/** Where the "skip approval for risky actions" setting lives: per site (saved) and per tab (this browser session). */
+/** Sites where routine risky actions skip the approval prompt. Saved per site, never per tab. */
 export class BypassStore {
-  constructor(
-    private local: KV,
-    private session: KV,
-  ) {}
+  constructor(private kv: KV) {}
 
   async origins(): Promise<string[]> {
-    return [...((await this.local.get<string[]>('bypassOrigins')) ?? [])].sort();
+    return [...((await this.kv.get<string[]>('bypassOrigins')) ?? [])].sort();
   }
 
   async setOrigin(origin: string, on: boolean): Promise<void> {
     const all = new Set(await this.origins());
     if (on) all.add(origin);
     else all.delete(origin);
-    await this.local.set('bypassOrigins', [...all]);
+    await this.kv.set('bypassOrigins', [...all]);
   }
 
-  async tabs(): Promise<number[]> {
-    return (await this.session.get<number[]>('bypassTabs')) ?? [];
-  }
-
-  async setTab(tabId: number, on: boolean): Promise<void> {
-    const all = new Set(await this.tabs());
-    if (on) all.add(tabId);
-    else all.delete(tabId);
-    await this.session.set('bypassTabs', [...all]);
-  }
-
-  async applies(origin: string, tabId: number): Promise<boolean> {
-    return (await this.tabs()).includes(tabId) || (await this.origins()).includes(origin);
+  async applies(origin: string): Promise<boolean> {
+    return (await this.origins()).includes(origin);
   }
 }

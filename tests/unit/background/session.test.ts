@@ -39,19 +39,33 @@ async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boo
   await settings.update({ activeProfileId: opts.noProfile ? null : testProfile.id });
   if (opts.allow) await siteStore.allow('https://shop.test');
   const posted: BgToPanel[] = [];
+  const prepared: Array<[number, boolean]> = [];
   const driver = new FakeHandle();
   const llm = new FakeLlm(script);
   let n = 0;
   const session = new PanelSession(
     { postMessage: (m) => posted.push(m) },
-    { profiles, settings, siteStore, history, makeLlm: () => llm, makeDriver: () => driver, newId: () => `id${++n}` },
+    { profiles, settings, siteStore, history, makeLlm: () => llm, makeDriver: () => driver, workspace: { prepare: async (t, fresh) => (prepared.push([t, fresh]), 9) }, newId: () => `id${++n}` },
   );
-  return { session, posted, driver, history, llm };
+  return { session, posted, driver, history, llm, prepared };
 }
 
 const start = { type: 'start' as const, conversationId: null, text: 'Click it', attachments: [], tabId: 42 };
 
 describe('PanelSession', () => {
+  it('prepares the tab group on request, before any task, and reports it', async () => {
+    const s = await setup([]);
+    await s.session.handle({ type: 'prepare', tabId: 42, fresh: false });
+    expect(s.prepared).toEqual([[42, false]]);
+    expect(s.posted).toEqual([{ type: 'group', groupId: 9 }]);
+    expect(s.driver.started).toBeNull();
+  });
+
+  it('reuses the group when a task starts', async () => {
+    const s = await setup([toolCall('done', { summary: 'ok' })], { allow: true });
+    await s.session.handle(start);
+    expect(s.prepared).toEqual([[42, false]]);
+  });
 
   it('resolves vision per model: a vision model on a non-vision profile gets coordinates and images', async () => {
     const s = await setup([toolCall('done', { summary: 'ok' })], { allow: true, profile: { visionModels: ['m'] } });

@@ -108,7 +108,7 @@ Paste this into the dashboard's **Test instructions** field and fill in a real k
 3. Paste this API key: <KEY>
 4. Click "Test connection", then type or pick the model: openai/gpt-4o-mini
 5. Click Save, then go back to any web page (e.g. https://en.wikipedia.org/wiki/Special:Random).
-6. In the side panel, type: "Summarise this page in three bullet points" and press Send.
-7. Approve the site when asked. Errand moves its tab into an "Errand" tab group, reads the page and replies. Chrome shows its debugging bar while the task runs; this is expected.
+6. Note that opening the side panel puts the current tab into an "Errand" tab group. In the side panel, type: "Summarise this page in three bullet points" and press Send.
+7. Approve the site when asked. Errand reads the page and replies. Chrome shows its debugging bar while the task runs; this is expected.
 8. Try a task with a risky action (e.g. on a search page, "search for 'chrome extensions' and click the first result") to see the approval prompts. Press Stop at any time to end a task.
 ```
