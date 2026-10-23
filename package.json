@@ -2,7 +2,7 @@
   "name": "errand",
   "description": "An AI agent that browses for you in a side panel. Bring any OpenAI-compatible model: OpenAI, OpenRouter, Ollama and more.",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "AGPL-3.0-only",
   "repository": "github:Dread63/errand",
   "type": "module",
