@@ -68,7 +68,7 @@ Firefox isn't supported: it lacks the `debugger` API Errand uses to send real cl
 
 ## How it works
 
-- Errand moves the tab you start from into a purple **Errand** tab group, and works only in tabs in that group (including ones it opens).
+- Opening Errand puts the current tab into a purple **Errand** tab group right away, so you can add more tabs to it before your first prompt. Errand works only in tabs in that group (including ones it opens), keeps the same group across stopped and resumed tasks, and makes a new group only when you start a new chat.
 - It asks **before touching a new site** (Allow once / Always allow / Deny) and **before risky actions**. Edit the risky words in Settings → General.
 - While a task runs, Chrome shows a **"started debugging this browser"** bar. That's how Errand sends real mouse and keyboard input. Closing the bar pauses the task.
 - Past chats are under **History**, stored only on this device. Screenshots aren't saved.

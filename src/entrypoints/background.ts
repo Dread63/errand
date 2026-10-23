@@ -17,21 +17,18 @@ export default defineBackground(() => {
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== PANEL_PORT) return;
     const kv = chromeKV();
+    const agentTabs = new AgentTabs(chrome.tabs as unknown as TabsApi, chrome.tabGroups as unknown as TabGroupsApi);
     const session = new PanelSession(
       { postMessage: (m: BgToPanel) => port.postMessage(m) },
       {
         profiles: new ProfileStore(kv),
         settings: new SettingsStore(kv),
         siteStore: new SitePermissionStore(kv),
-        bypass: new BypassStore(kv, chromeKV(chrome.storage.session)),
+        bypass: new BypassStore(kv),
         history: new HistoryStore(kv),
         makeLlm: (profile) => new OpenAIClient(profile),
-        makeDriver: () =>
-          new ChromeDriver(
-            new AgentTabs(chrome.tabs as unknown as TabsApi, chrome.tabGroups as unknown as TabGroupsApi),
-            new Cdp(),
-            new ContentMessenger(),
-          ),
+        workspace: agentTabs,
+        makeDriver: () => new ChromeDriver(agentTabs, new Cdp(), new ContentMessenger()),
       },
     );
     port.onMessage.addListener((m: PanelToBg) => {

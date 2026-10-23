@@ -178,7 +178,7 @@ describe('runAgent', () => {
 
   it('bypass skips routine risky prompts but not sensitive or keyword ones', async () => {
     const s = setup([toolCall('click', { id: 2 }), toolCall('click', { id: 4 }), toolCall('type', { id: 3, text: 'pw' }), toolCall('done', { summary: 'x' })]);
-    s.deps.bypass = new BypassStore(memoryKV(), memoryKV());
+    s.deps.bypass = new BypassStore(memoryKV());
     await s.deps.bypass.setOrigin('https://shop.test', true);
     s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
     s.driver.elements[4] = el(4, { name: 'Place order' });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { memoryKV } from '@/lib/storage/kv';
 import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
 import { DEFAULT_RISKY_KEYWORDS, DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
-import { SitePermissionStore } from '@/lib/storage/sites';
+import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
 import { HistoryStore } from '@/lib/storage/history';
 import type { Conversation, Profile } from '@/lib/types';
 
@@ -140,5 +140,16 @@ describe('HistoryStore', () => {
     await s.remove('a');
     expect(await s.list()).toEqual([]);
     expect(await s.get('a')).toBeUndefined();
+  });
+});
+
+describe('BypassStore', () => {
+  it('is scoped to the site, so another site never inherits it, and unchecking removes it', async () => {
+    const s = new BypassStore(memoryKV());
+    await s.setOrigin('https://a.test', true);
+    expect(await s.applies('https://a.test')).toBe(true);
+    expect(await s.applies('https://b.test')).toBe(false);
+    await s.setOrigin('https://a.test', false);
+    expect(await s.origins()).toEqual([]);
   });
 });

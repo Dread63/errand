@@ -17,7 +17,13 @@ export interface DriverHandle extends BrowserDriver {
   stop(): Promise<void>;
 }
 
+/** The agent's persistent tab group, shared by every run of one panel. */
+export interface Workspace {
+  prepare(tabId: number, fresh: boolean): Promise<number>;
+}
+
 export interface SessionDeps {
+  workspace?: Workspace;
   profiles: ProfileStore;
   settings: SettingsStore;
   siteStore: SitePermissionStore;
@@ -115,6 +121,9 @@ export class PanelSession {
           this.running = null;
         });
         return this.running;
+      case 'prepare':
+        if (this.running) return;
+        return this.prepare(msg.tabId, msg.fresh);
       case 'stop':
         this.abort?.abort();
         return;
@@ -131,6 +140,15 @@ export class PanelSession {
 
   idle(): Promise<void> {
     return this.running ?? Promise.resolve();
+  }
+
+  private async prepare(tabId: number, fresh: boolean): Promise<void> {
+    try {
+      const groupId = await this.deps.workspace?.prepare(tabId, fresh);
+      if (groupId !== undefined) this.post({ type: 'group', groupId });
+    } catch {
+      // not fatal: the group is created again when a task starts, and that reports any real problem
+    }
   }
 
   private async run(msg: Extract<PanelToBg, { type: 'start' }>): Promise<void> {
@@ -172,6 +190,7 @@ export class PanelSession {
 
     const driver = this.deps.makeDriver();
     try {
+      await this.prepare(msg.tabId, false);
       await timed('session: start driver', () => driver.start(msg.tabId));
       conv.turns = await runAgent(conv.turns, {
         llm: this.deps.makeLlm(profile),

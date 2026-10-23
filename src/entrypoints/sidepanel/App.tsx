@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { chromeKV } from '@/lib/storage/kv';
 import { selectModel } from '@/lib/storage/models';
 import { ProfileStore } from '@/lib/storage/profiles';
@@ -30,6 +30,18 @@ export function App() {
   const firstUser = state.turns.find((t) => t.kind === 'user');
   const title = firstUser && firstUser.kind === 'user' ? firstUser.text : 'New chat';
 
+  // Create the agent's tab group as soon as the panel opens, so tabs can be added to it before the first prompt.
+  useEffect(() => {
+    void targetTabId().then((tabId) => tabId !== undefined && send({ type: 'prepare', tabId, fresh: false }));
+  }, [send]);
+
+  async function newChat() {
+    dispatch({ type: 'new_chat' });
+    setView('chat');
+    const tabId = await targetTabId();
+    if (tabId !== undefined && !state.running) send({ type: 'prepare', tabId, fresh: true });
+  }
+
   async function onSend(text: string, attachments: Attachment[]) {
     const tabId = await targetTabId();
     if (tabId === undefined) {
@@ -45,10 +57,7 @@ export function App() {
         title={title}
         view={view}
         busy={state.running}
-        onNew={() => {
-          dispatch({ type: 'new_chat' });
-          setView('chat');
-        }}
+        onNew={() => void newChat()}
         onToggleHistory={() => setView((v) => (v === 'chat' ? 'history' : 'chat'))}
       />
       {view === 'history' ? (
@@ -76,7 +85,7 @@ export function App() {
               </button>
             </div>
           )}
-          <TabChip />
+          <TabChip groupId={state.groupId} />
           <Composer
             running={state.running}
             ready={canSend(active)}

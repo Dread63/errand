@@ -8,6 +8,7 @@ export interface PendingGate {
 
 export interface PanelState {
   conversationId: string | null;
+  groupId: number | null;
   turns: Turn[];
   streaming: string;
   reasoning: string;
@@ -25,6 +26,7 @@ export type PanelAction =
 
 export const initialPanelState: PanelState = {
   conversationId: null,
+  groupId: null,
   turns: [],
   streaming: '',
   reasoning: '',
@@ -37,6 +39,8 @@ export function panelReducer(s: PanelState, a: PanelAction): PanelState {
   switch (a.type) {
     case 'conversation':
       return { ...s, conversationId: a.conversationId, turns: a.turns, streaming: '', reasoning: '' };
+    case 'group':
+      return { ...s, groupId: a.groupId };
     case 'delta':
       return { ...s, streaming: s.streaming + a.text };
     case 'reasoning':
@@ -52,9 +56,9 @@ export function panelReducer(s: PanelState, a: PanelAction): PanelState {
     case 'dismiss_error':
       return { ...s, error: null };
     case 'new_chat':
-      return s.running ? s : initialPanelState;
+      return s.running ? s : { ...initialPanelState };
     case 'load':
-      return s.running ? s : { ...initialPanelState, conversationId: a.conversationId, turns: a.turns };
+      return s.running ? s : { ...initialPanelState, groupId: s.groupId, conversationId: a.conversationId, turns: a.turns };
     case 'disconnected':
       return { ...s, running: false, gates: [] };
   }
