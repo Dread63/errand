@@ -5,7 +5,13 @@ import type { ActionTarget, ElementInfo, ToolCall } from '../types';
 import { normalizeNavUrl } from '../url';
 import { clip } from '../util';
 
-type Prop = { type: 'integer' | 'string' | 'boolean'; description?: string; enum?: string[] };
+type Prop = { type: 'integer' | 'string' | 'boolean' | 'array'; description?: string; enum?: string[]; items?: { type: 'string' } };
+
+const FILES: Prop = {
+  type: 'array',
+  items: { type: 'string' },
+  description: 'Names of the user\'s attached files to upload, e.g. ["receipt.pdf"]',
+};
 
 const COMMON: Record<string, Prop> = {
   reason: { type: 'string', description: 'One short sentence: why this action.' },
@@ -41,6 +47,12 @@ export function toolSchemas(vision: boolean): ToolSchema[] {
       ['text'],
     ),
     tool('select', 'Choose an option in a dropdown (<select>) by its visible text or value.', { id: ID, value: { type: 'string' } }, ['id', 'value']),
+    tool(
+      'attach_files',
+      `Attach the user's files to an upload control on this page (receipt, photo, resume...). files lists the attached file names. Pass the id of the file input, or of its visible Upload/Attach button, when the page has several; without an id the best matching input is used. Never click controls that open the browser's upload dialog - it cannot be handled. Submit the form as usual afterwards.`,
+      { files: FILES, id: ID },
+      ['files'],
+    ),
     tool('scroll', 'Scroll the page up or down, or scroll an element into view.', {
       direction: { type: 'string', enum: ['up', 'down'] },
       id: ID,
@@ -81,6 +93,26 @@ function coerce(key: string, v: unknown, spec: Prop): unknown {
     if (v === 'true') return true;
     if (v === 'false') return false;
     throw new ToolError(`"${key}" must be true or false.`);
+  }
+  if (spec.type === 'array') {
+    if (Array.isArray(v)) {
+      const items = v.map((x) => String(x ?? '').trim()).filter(Boolean);
+      if (!items.length) throw new ToolError(`"${key}" must be a list of names.`);
+      return items;
+    }
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (!t) return undefined;
+      if (t.startsWith('[')) {
+        try {
+          return coerce(key, JSON.parse(t), spec);
+        } catch {
+          // fall through: treat the whole string as one name
+        }
+      }
+      return [t]; // a single name without brackets is still one file
+    }
+    throw new ToolError(`"${key}" must be a list of names, got ${JSON.stringify(v)}.`);
   }
   const s = typeof v === 'string' ? v : String(v);
   if (spec.enum && !spec.enum.includes(s)) throw new ToolError(`"${key}" must be one of ${spec.enum.join(', ')}.`);
@@ -131,6 +163,7 @@ export function validateCall(call: ToolCall, vision = false): ToolCall {
   if (call.name === 'key' && args.repeat !== undefined) args.repeat = Math.min(Math.max(args.repeat as number, 1), 50);
   if (call.name === 'wait') args.ms = Math.min(Math.max(args.ms as number, 0), 10_000);
   if (call.name === 'navigate' || call.name === 'new_tab') args.url = checkUrl(String(args.url));
+  if (call.name === 'attach_files') args.files = [...new Set(args.files as string[])].slice(0, 20);
   return { id: call.id, name: call.name, args };
 }
 
@@ -164,6 +197,8 @@ export function describeCall(call: ToolCall, target?: ActionTarget): string {
     }
     case 'select':
       return `Select "${a.value}" in ${what}`;
+    case 'attach_files':
+      return `Attach ${(a.files as string[]).join(', ')} to the page`;
     case 'scroll':
       return a.id !== undefined ? `Scroll to ${what}` : `Scroll ${a.direction}`;
     case 'key':
@@ -212,6 +247,8 @@ export function pillLabel(call: ToolCall, target?: ActionTarget): string {
       return `Choosing from ${noun}`;
     case 'scroll':
       return 'Scrolling';
+    case 'attach_files':
+      return 'Attaching files';
     default:
       return describeCall(call, target); // key, navigate, etc. carry no element or field names
   }

@@ -3,7 +3,7 @@ import { pillLabel } from '../agent/tools';
 import type { BrowserDriver } from '../agent/ports';
 import type { ContentRequest, ResolveResult } from '../content/protocol';
 import { ToolError } from '../errors';
-import type { ActionTarget, ContextMode, ElementInfo, Observation, PageSnapshot, TabInfo, ToolCall } from '../types';
+import type { ActionTarget, ContextMode, ElementInfo, Observation, PageSnapshot, TabInfo, ToolCall, UploadFile } from '../types';
 import { isWebUrl, originOf } from '../url';
 import { timed } from '../timing';
 import { clip, sleep } from '../util';
@@ -32,6 +32,8 @@ export class ChromeDriver implements BrowserDriver {
   private isMac: boolean;
   private settleMs: number;
   private fitImage: (dataUrl: string, w: number, h: number) => Promise<string>;
+  /** The user's files, keyed by lowercase name, available to attach_files. */
+  private uploadFiles = new Map<string, UploadFile>();
 
   constructor(
     private tabs: TabsLike,
@@ -79,6 +81,29 @@ export class ChromeDriver implements BrowserDriver {
   async activeUrl(): Promise<string> {
     const t = await this.tabs.active();
     return t.url || t.pendingUrl || '';
+  }
+
+  /** Files the user attached across the conversation; a fresh task starts from its own message. */
+  setFiles(files: UploadFile[]): void {
+    this.uploadFiles.clear();
+    for (const f of files) this.uploadFiles.set(f.name.toLowerCase(), f);
+  }
+
+  private resolveUploads(names: string[]): UploadFile[] {
+    const out: UploadFile[] = [];
+    for (const n of names) {
+      const f = this.uploadFiles.get(n.toLowerCase());
+      if (!f) {
+        const available = [...this.uploadFiles.values()].map((f) => f.name);
+        throw new ToolError(
+          available.length
+            ? `There is no attached file named "${n}". Files available to attach: ${available.join(', ')}.`
+            : `There is no attached file named "${n}". The user has not attached any files yet; ask them to drop files into the chat.`,
+        );
+      }
+      out.push(f);
+    }
+    return out;
   }
 
   listTabs(): Promise<TabInfo[]> {
@@ -141,7 +166,7 @@ export class ChromeDriver implements BrowserDriver {
     const origin = originOf(url);
     const byId = call.args.id !== undefined && (ELEMENT_TOOLS.has(call.name) || call.name === 'scroll');
     const byPoint = !byId && call.args.x !== undefined && POINT_TOOLS.has(call.name);
-    const needsPage = byId || byPoint || call.name === 'type' || call.name === 'read_text';
+    const needsPage = byId || byPoint || call.name === 'type' || call.name === 'read_text' || call.name === 'attach_files';
     if (needsPage && !isWebUrl(url)) throw new ToolError('This page cannot be controlled. Use navigate or new_tab to go to a website.');
     if (byId) return this.resolve(tabId, origin, Number(call.args.id), POINT_TOOLS.has(call.name));
     if (byPoint) return this.at(tabId, origin, Number(call.args.x), Number(call.args.y));
@@ -248,6 +273,14 @@ export class ChromeDriver implements BrowserDriver {
         const p = await this.pointTo(target);
         await this.cdp.move(tabId, p.x, p.y);
         return `Hovering over ${label(target)}.`;
+      }
+      case 'attach_files': {
+        const files = this.resolveUploads(a.files as string[]);
+        return this.content.send<string>(tabId, {
+          type: 'attachFiles',
+          files: files.map((f) => ({ name: f.name, dataUrl: f.dataUrl })),
+          ...(a.id !== undefined ? { id: Number(a.id) } : {}),
+        });
       }
       case 'type': {
         if (target.point) {

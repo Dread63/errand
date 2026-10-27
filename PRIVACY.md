@@ -32,6 +32,8 @@ When you start a task, Errand sends the following to the model endpoint configur
 
 That provider's own privacy policy governs what happens to the data after it receives it. If you use a model on your own machine, the data never leaves your computer.
 
+The agent can also upload files you attached to a web page's own file-input (for example a receipt into an expense form). Beyond the site approval you already give, every upload is shown to you for approval before the file is sent, like other data-sending actions.
+
 Errand's page script is loaded on every site so it's ready when a task needs it, but it stays idle until then: it reads a page only when the agent is working in that tab, inside the **Errand** tab group, during a task you started. Errand asks for your approval before working on a site you haven't allowed.
 
 ## What Errand does not do

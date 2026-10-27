@@ -46,6 +46,7 @@ function setup(url = 'https://shop.test/') {
   let resolveResult: ResolveResult = { ok: true, x: 60, y: 35, info: info() };
   let focused: ElementInfo | null = info({ tag: 'input', inForm: true });
   let pointInfo: ElementInfo | null = info({ tag: 'div', role: 'generic', name: 'A1', rect: { x: 100, y: 40, w: 80, h: 20 } });
+  let attachReq: Extract<ContentRequest, { type: 'attachFiles' }> | undefined;
   const fitted: string[] = [];
   const labels: string[] = [];
   const content: MessengerLike = {
@@ -63,6 +64,10 @@ function setup(url = 'https://shop.test/') {
       if (req.type === 'select') return 'Selected "M".' as T;
       if (req.type === 'focused') return focused as T;
       if (req.type === 'pointInfo') return pointInfo as T;
+      if (req.type === 'attachFiles') {
+        attachReq = req;
+        return `Attached ${req.files.map((f) => f.name).join(', ')} to the page.` as T;
+      }
       return null as T;
     },
   };
@@ -84,6 +89,7 @@ function setup(url = 'https://shop.test/') {
     setResolve: (r: ResolveResult) => (resolveResult = r),
     setFocused: (e: ElementInfo | null) => (focused = e),
     setPointInfo: (e: ElementInfo | null) => (pointInfo = e),
+    sentAttach: () => attachReq,
   };
 }
 const call = (name: string, args: Record<string, unknown> = {}): ToolCall => ({ id: 'c', name, args });
@@ -349,5 +355,44 @@ describe('ChromeDriver.perform', () => {
     const { driver, log } = setup();
     await driver.stop();
     expect(log).toEqual(['content.overlay.active', 'cdp.detachAll', 'cdp.dispose', 'tabs.stop']);
+  });
+
+  it('hands the user file bytes to a web page with attach_files', async () => {
+    const { driver, sentAttach } = setup();
+    driver.setFiles([{ name: 'Receipt.pdf', dataUrl: 'data:application/pdf;base64,AAAA' }]);
+    const t = await driver.target(call('attach_files', { files: ['Receipt.pdf'] }));
+    expect(t).toEqual({ tabId: 1, origin: 'https://shop.test' });
+    const r = await driver.perform(call('attach_files', { files: ['Receipt.pdf'], id: 4 }), t, 'compact');
+    expect(r).toBe('Attached Receipt.pdf to the page.');
+    expect(sentAttach()).toEqual({
+      type: 'attachFiles',
+      files: [{ name: 'Receipt.pdf', dataUrl: 'data:application/pdf;base64,AAAA' }],
+      id: 4,
+    });
+  });
+
+  it('matches attachment names case-insensitively', async () => {
+    const { driver, sentAttach } = setup();
+    driver.setFiles([{ name: 'Receipt.pdf', dataUrl: 'data:application/pdf;base64,AAAA' }]);
+    const t = await driver.target(call('attach_files', { files: ['receipt.pdf'] }));
+    await driver.perform(call('attach_files', { files: ['receipt.pdf'] }), t, 'compact');
+    expect(sentAttach()!.files[0].name).toBe('Receipt.pdf');
+  });
+
+  it('tells the model which files exist when the name is wrong', async () => {
+    const { driver } = setup();
+    driver.setFiles([{ name: 'Receipt.pdf', dataUrl: 'data:application/pdf;base64,AAAA' }]);
+    const t = await driver.target(call('attach_files', { files: ['bogus.pdf'] }));
+    await expect(driver.perform(call('attach_files', { files: ['bogus.pdf'] }), t, 'compact')).rejects.toThrow(
+      'There is no attached file named "bogus.pdf". Files available to attach: Receipt.pdf.',
+    );
+  });
+
+  it('tells the model when the user attached no files at all', async () => {
+    const { driver } = setup();
+    const t = await driver.target(call('attach_files', { files: ['x.pdf'] }));
+    await expect(driver.perform(call('attach_files', { files: ['x.pdf'] }), t, 'compact')).rejects.toThrow(
+      /The user has not attached any files yet; ask them to drop files into the chat/,
+    );
   });
 });

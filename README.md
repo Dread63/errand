@@ -25,7 +25,7 @@ Tell Errand what you need ("fill in this form from my notes", "compare these two
 - **Any model.** Works with any OpenAI-compatible `/v1/chat/completions` API, hosted or on your own machine. No Errand account, no subscription.
 - **You stay in control.** It asks before using a new site and before risky actions (purchases, submissions, deletions, passwords, downloads), works only in its own **Errand** tab group, and **Stop** ends a task instantly.
 - **See what it's doing.** A live cursor and highlights on the page, and a step-by-step activity log in the panel.
-- **Attachments.** Give it images, PDFs or text files to work from.
+- **Attachments.** Give it images, PDFs or text files to work from — and it can attach them to pages too (a receipt into an expense form, a resume into an application), with no file-picker dialogs.
 - **Private.** No servers, no analytics. Everything stays on your device except what you send to your own model provider. See [PRIVACY.md](PRIVACY.md).
 
 ## Install

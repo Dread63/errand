@@ -1,7 +1,9 @@
-import type { Attachment } from './types';
+import type { Attachment, Turn, UploadFile } from './types';
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_TEXT_BYTES = 20 * 1024 * 1024;
+/** Original files above this size are not kept around for uploading, only their content is. */
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 const TEXT_EXT =
   /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|html?|css|js|mjs|cjs|ts|tsx|jsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|bash|zsh|fish|ya?ml|toml|ini|cfg|conf|log|sql|env)$/i;
@@ -38,11 +40,23 @@ export async function readAttachment(file: File, deps: AttachmentDeps = {}): Pro
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
     const pdfToText = deps.pdfToText ?? (await import('./pdf')).pdfToText;
     const { text, pages } = await pdfToText(file);
-    return { name: file.name, kind: 'text', text, meta: `${pages} page${pages === 1 ? '' : 's'}` };
+    // The original bytes are kept so the agent can upload the file to a page (attach_files).
+    const dataUrl = file.size <= MAX_UPLOAD_BYTES ? await toDataUrl(file) : undefined;
+    return { name: file.name, kind: 'text', text, dataUrl, meta: `${pages} page${pages === 1 ? '' : 's'}` };
   }
   if (file.type.startsWith('text/') || /json|xml|javascript|yaml|toml/.test(file.type) || TEXT_EXT.test(file.name)) {
     if (file.size > MAX_TEXT_BYTES) throw new Error(`"${file.name}" is larger than 20 MB.`);
-    return { name: file.name, kind: 'text', text: await file.text(), meta: formatBytes(file.size) };
+    return { name: file.name, kind: 'text', text: await file.text(), dataUrl: await toDataUrl(file), meta: formatBytes(file.size) };
   }
   throw new Error(`Unsupported file type for "${file.name}". Attach images, PDFs or text files.`);
+}
+
+/** Every file in the conversation that has original bytes, ready for the attach_files tool. */
+export function uploadsFromTurns(turns: Turn[]): UploadFile[] {
+  const out: UploadFile[] = [];
+  for (const t of turns) {
+    if (t.kind !== 'user') continue;
+    for (const a of t.attachments) if (a.dataUrl) out.push({ name: a.name, dataUrl: a.dataUrl });
+  }
+  return out;
 }

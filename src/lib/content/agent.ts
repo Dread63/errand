@@ -2,6 +2,7 @@ import { FrameGuard } from './guard';
 import { Overlay } from './overlay';
 import type { ContentReply, ContentRequest } from './protocol';
 import { ElementRegistry, elementAtPoint, focusedElementInfo, readPageText, resolveElement, selectOption, takeSnapshot } from './snapshot';
+import { attachFiles } from './upload';
 
 export function createContentHandler(doc: Document, opts: { moveMs?: number; ownExtensionId?: string } = {}) {
   const registry = new ElementRegistry();
@@ -13,6 +14,8 @@ export function createContentHandler(doc: Document, opts: { moveMs?: number; own
     switch (req.type) {
       case 'ping':
         return 'pong';
+      case 'attachFiles':
+        return attachFiles(doc, registry, req);
       case 'snapshot':
         return takeSnapshot(doc, registry, req.mode);
       case 'resolve':

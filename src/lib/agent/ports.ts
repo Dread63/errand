@@ -1,5 +1,5 @@
 import type { SiteDecision } from '../policy/sites';
-import type { ActionTarget, ContextMode, Observation, TabInfo, ToolCall, Turn } from '../types';
+import type { ActionTarget, ContextMode, Observation, TabInfo, ToolCall, Turn, UploadFile } from '../types';
 
 export interface BrowserDriver {
   activeUrl(): Promise<string>;
@@ -9,6 +9,8 @@ export interface BrowserDriver {
   perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string>;
   highlight(target: ActionTarget | null): Promise<void>;
   reattach(): Promise<void>;
+  /** The user's files for the attach_files tool; optional so test drivers need no files. */
+  setFiles?(files: UploadFile[]): void;
 }
 
 export interface RiskyRequest {

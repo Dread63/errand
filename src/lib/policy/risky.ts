@@ -46,6 +46,7 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
       if (e.type === 'file') reasons.push('Opens a file upload');
     }
   }
+  if (call.name === 'attach_files') reasons.push("Uploads the user's files to the site");
   if (call.args.risky === true) reasons.push('The model flagged this action as risky');
   return { risky: reasons.length > 0, reasons, hard };
 }

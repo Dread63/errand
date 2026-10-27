@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harbor Street Workshop: Registration</title>
+<style>
+  :root { --ink:#1b2430; --muted:#5d6b7a; --line:#d8dee6; --accent:#2f6fed; --bg:#f4f6f9; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:18px 24px; font-weight:700; letter-spacing:.2px; }
+  main { max-width:640px; margin:32px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px; box-shadow:0 2px 10px rgba(20,30,50,.05); }
+  h1 { margin:0 0 4px; font-size:24px; }
+  .sub { margin:0 0 24px; color:var(--muted); }
+  label, legend { display:block; font-weight:600; font-size:14px; margin-bottom:6px; }
+  .field { margin-bottom:18px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  input[type=text], input[type=email], input[type=tel], input[type=number], select, textarea {
+    width:100%; padding:10px 12px; font:inherit; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  input:focus, select:focus, textarea:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent); }
+  fieldset { border:0; padding:0; margin:0 0 18px; }
+  .opt { display:flex; align-items:center; gap:8px; margin:6px 0; font-weight:400; }
+  .opt input { width:auto; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:12px 22px; font:inherit; font-weight:600; cursor:pointer; }
+  button:hover { filter:brightness(1.08); }
+  #done { display:none; text-align:center; padding:12px 0; }
+  #done h2 { margin:0 0 8px; }
+  #summary { text-align:left; background:var(--bg); border-radius:8px; padding:14px 16px; margin-top:16px; font-size:14px; }
+  #summary div { margin:2px 0; }
+  .again { margin-top:16px; background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  @media (max-width:520px) { .row { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>Harbor Street Workshop</header>
+<main>
+  <div class="card">
+    <form id="form" autocomplete="off">
+      <h1>Workshop registration</h1>
+      <p class="sub">Saturday sessions at the Harbor Street community studio.</p>
+
+      <div class="row">
+        <div class="field"><label for="first">First name</label><input type="text" id="first" name="first" required></div>
+        <div class="field"><label for="last">Last name</label><input type="text" id="last" name="last" required></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="email">Email</label><input type="email" id="email" name="email" required></div>
+        <div class="field"><label for="phone">Phone</label><input type="tel" id="phone" name="phone"></div>
+      </div>
+      <div class="field"><label for="org">Organization (optional)</label><input type="text" id="org" name="org"></div>
+
+      <div class="row">
+        <div class="field">
+          <label for="session">Session</label>
+          <select id="session" name="session" required>
+            <option value="">Choose a session</option>
+            <option>Pottery basics</option>
+            <option>Watercolor landscapes</option>
+            <option>Intro to woodworking</option>
+            <option>Screen printing</option>
+          </select>
+        </div>
+        <div class="field"><label for="guests">Number of tickets</label><input type="number" id="guests" name="guests" min="1" max="6" value="1"></div>
+      </div>
+
+      <fieldset>
+        <legend>Date</legend>
+        <label class="opt"><input type="radio" name="date" value="Oct 18" required> Saturday, Oct 18</label>
+        <label class="opt"><input type="radio" name="date" value="Oct 25"> Saturday, Oct 25</label>
+        <label class="opt"><input type="radio" name="date" value="Nov 1"> Saturday, Nov 1</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Lunch preferences</legend>
+        <label class="opt"><input type="checkbox" name="diet" value="Vegetarian"> Vegetarian</label>
+        <label class="opt"><input type="checkbox" name="diet" value="Vegan"> Vegan</label>
+        <label class="opt"><input type="checkbox" name="diet" value="Gluten-free"> Gluten-free</label>
+        <label class="opt"><input type="checkbox" name="diet" value="Nut allergy"> Nut allergy</label>
+      </fieldset>
+
+      <div class="field"><label for="notes">Anything we should know?</label><textarea id="notes" name="notes" rows="3"></textarea></div>
+
+      <button type="submit">Register</button>
+    </form>
+
+    <div id="done" role="status">
+      <h2>You're registered 🎉</h2>
+      <p>Demo only: nothing was sent anywhere.</p>
+      <div id="summary"></div>
+      <button class="again" id="again" type="button">Register someone else</button>
+    </div>
+  </div>
+</main>
+<script>
+  const form = document.getElementById('form'), done = document.getElementById('done'), summary = document.getElementById('summary');
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const d = new FormData(form);
+    const rows = [
+      ['Name', d.get('first') + ' ' + d.get('last')], ['Email', d.get('email')], ['Phone', d.get('phone') || 'n/a'],
+      ['Organization', d.get('org') || 'n/a'], ['Session', d.get('session') + ', ' + d.get('date')],
+      ['Tickets', d.get('guests')], ['Lunch', d.getAll('diet').join(', ') || 'no preference'], ['Notes', d.get('notes') || 'none'],
+    ];
+    summary.replaceChildren(...rows.map(([k, v]) => { const el = document.createElement('div'); el.textContent = k + ': ' + v; return el; }));
+    form.style.display = 'none'; done.style.display = 'block';
+  });
+  document.getElementById('again').addEventListener('click', () => { form.reset(); done.style.display = 'none'; form.style.display = 'block'; });
+</script>
+</body>
+</html>

@@ -6,9 +6,9 @@ import type { ElementInfo, ToolCall } from '@/lib/types';
 const c = (name: string, args: Record<string, unknown> = {}): ToolCall => ({ id: 'x', name, args });
 
 describe('TOOL_SCHEMAS', () => {
-  it('defines the 15 spec tools', () => {
+  it('defines the 16 spec tools', () => {
     expect(TOOL_NAMES).toEqual([
-      'click', 'type', 'select', 'scroll', 'hover', 'key', 'navigate', 'back', 'wait',
+      'click', 'type', 'select', 'attach_files', 'scroll', 'hover', 'key', 'navigate', 'back', 'wait',
       'read_text', 'new_tab', 'switch_tab', 'close_tab', 'ask_user', 'done',
     ]);
     for (const t of TOOL_SCHEMAS) expect(t.function.parameters).toMatchObject({ type: 'object' });
@@ -96,6 +96,24 @@ describe('describeCall', () => {
     expect(describeCall(c('type', { id: 3, text: 'hunter2' }), { tabId: 1, origin: 'o', element: field({ type: 'password' }) })).toBe(
       'Type "••••••" into the "Password" text box',
     );
+  });
+  it('names the files being attached', () => {
+    expect(describeCall(c('attach_files', { files: ['receipt.pdf', 'scan.png'] }))).toBe('Attach receipt.pdf, scan.png to the page');
+    expect(pillLabel(c('attach_files', { files: ['receipt.pdf'] }))).toBe('Attaching files');
+  });
+});
+
+describe('attach_files args', () => {
+  it('requires files and accepts a list, a single name or a stringified list', () => {
+    expect(() => validateCall(c('attach_files', {}))).toThrow(/requires "files"/);
+    expect(() => validateCall(c('attach_files', { files: '' }))).toThrow(/requires "files"/);
+    expect(() => validateCall(c('attach_files', { files: 7 }))).toThrow(/list of names/);
+    expect(() => validateCall(c('attach_files', { files: [] }))).toThrow(/list of names/);
+    expect(validateCall(c('attach_files', { files: ['receipt.pdf'] })).args.files).toEqual(['receipt.pdf']);
+    expect(validateCall(c('attach_files', { files: 'receipt.pdf' })).args.files).toEqual(['receipt.pdf']);
+    expect(validateCall(c('attach_files', { files: '["a.pdf", "b.png"]' })).args.files).toEqual(['a.pdf', 'b.png']);
+    // Duplicate names collapse to one call and blank names are dropped.
+    expect(validateCall(c('attach_files', { files: ['a.pdf', ' ', 'a.pdf'] })).args.files).toEqual(['a.pdf']);
   });
 });
 

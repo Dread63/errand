@@ -1,7 +1,9 @@
-import type { ContextMode, ElementInfo, Rect } from '../types';
+import type { ContextMode, ElementInfo, Rect, UploadFile } from '../types';
 
 export type ContentRequest =
   | { type: 'ping' }
+  /** Hands the user's files to a file input on the page: sets the files and fires change. */
+  | { type: 'attachFiles'; files: UploadFile[]; id?: number }
   | { type: 'snapshot'; mode: ContextMode }
   | { type: 'resolve'; id: number; scroll: boolean }
   | { type: 'focused' }

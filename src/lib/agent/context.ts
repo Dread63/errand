@@ -30,6 +30,8 @@ function userMessage(text: string, attachments: Attachment[], attChars: number, 
   for (const a of attachments) {
     if (a.kind === 'text') body += `\n\n<attachment name="${a.name}">\n${clip(a.text ?? '', attChars)}\n</attachment>`;
   }
+  const uploadable = attachments.filter((a) => a.dataUrl).map((a) => a.name);
+  if (uploadable.length) body += `\n\nThe user attached these files: ${uploadable.join(', ')}. Upload any of them to the page with attach_files when the task needs it.`;
   const images = vision ? attachments.filter((a) => a.kind === 'image' && a.dataUrl) : [];
   if (!images.length) return { role: 'user', content: body };
   const parts: ContentPart[] = [{ type: 'text', text: body }];

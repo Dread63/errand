@@ -1,3 +1,4 @@
+import { uploadsFromTurns } from '../attachments';
 import { runAgent } from '../agent/loop';
 import type { BrowserDriver, RiskyRequest, UserGate } from '../agent/ports';
 import type { LlmClient } from '../llm/client';
@@ -189,6 +190,8 @@ export class PanelSession {
     this.post({ type: 'conversation', conversationId: conv.id, turns: conv.turns });
 
     const driver = this.deps.makeDriver();
+    // The user's files travel with the task so the agent can attach them to pages (attach_files).
+    driver.setFiles?.(uploadsFromTurns(conv.turns));
     try {
       await this.prepare(msg.tabId, false);
       await timed('session: start driver', () => driver.start(msg.tabId));

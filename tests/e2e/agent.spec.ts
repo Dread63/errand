@@ -20,7 +20,30 @@ test('fills a form after site and risky-action approvals, with the overlay visib
   await expect(panel.getByText('Saved the form.')).toBeVisible();
   await expect(page.locator('#out')).toHaveText('Saved: Ada');
   await expect(page.locator('#errand-overlay')).toHaveCount(1);
-  expect(servers.requests[0].tools).toHaveLength(15);
+  expect(servers.requests[0].tools).toHaveLength(16);
+});
+
+test('attaches a file the user dropped in the chat to the page, without an upload dialog', async ({ context, sw, extensionId, servers }) => {
+  await configure(sw, servers.llmUrl, [servers.siteUrl]);
+  servers.setScript([
+    { name: 'attach_files', arguments: { files: ['invoice.txt'] }, content: 'Attaching the invoice.' },
+    { name: 'done', arguments: { summary: 'Attached invoice.txt to the expense report.' } },
+  ]);
+  const page = await context.newPage();
+  await page.goto(`${servers.siteUrl}/upload.html`);
+  const panel = await openPanel(context, sw, extensionId, await tabIdFor(sw, page.url()));
+
+  // The user drops the file into the chat; the agent never has to open the OS file chooser.
+  await panel
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'invoice.txt', mimeType: 'text/plain', buffer: Buffer.from('INVOICE #123') });
+  await panel.getByTestId('composer-input').fill('Attach the receipt to this expense report');
+  await panel.getByTestId('composer-send').click();
+
+  // Attaching sends the user's files, so it asks before uploading.
+  await panel.getByRole('button', { name: 'Approve' }).click();
+  await expect(panel.getByText('Attached invoice.txt to the expense report.')).toBeVisible();
+  await expect(page.locator('#status')).toHaveText('Received 1 file(s): invoice.txt (12 bytes)');
 });
 
 test('a rejected risky action is not performed', async ({ context, sw, extensionId, servers }) => {

@@ -78,6 +78,27 @@ function collect(root: Document | ShadowRoot, out: Element[], seen: Set<Element>
   });
 }
 
+/** Every file input (used and unused) across the document, open shadow roots and same-origin iframes. */
+export function collectFileInputs(doc: Document): HTMLInputElement[] {
+  const out: HTMLInputElement[] = [];
+  const walk = (root: Document | ShadowRoot): void => {
+    root.querySelectorAll('input[type=file]').forEach((el) => out.push(el as HTMLInputElement));
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.shadowRoot) walk(el.shadowRoot);
+      if (el.tagName === 'IFRAME') {
+        try {
+          const d = (el as HTMLIFrameElement).contentDocument;
+          if (d) walk(d);
+        } catch {
+          // cross-origin iframe: not supported in v1
+        }
+      }
+    });
+  };
+  walk(doc);
+  return out;
+}
+
 function frameOffset(el: Element): { x: number; y: number } {
   let x = 0;
   let y = 0;
@@ -233,7 +254,8 @@ function describe(el: Element, id: number, rect: Rect, withContext: boolean): El
   if (tag === 'input' || tag === 'textarea') {
     const input = el as HTMLInputElement;
     if (type === 'checkbox' || type === 'radio') info.checked = input.checked;
-    else if (input.value) info.value = type === 'password' ? '••••••' : clip(input.value, 200);
+    // File inputs only ever report the fake C:\fakepath path; their files are set with attach_files.
+    else if (input.value && type !== 'file') info.value = type === 'password' ? '••••••' : clip(input.value, 200);
   }
   if (tag === 'select') {
     const s = el as HTMLSelectElement;
@@ -261,10 +283,18 @@ export function takeSnapshot(doc: Document, reg: ElementRegistry, mode: ContextM
   const found: Element[] = [];
   collect(doc, found, new Set());
   const elements: ElementInfo[] = [];
+  const shown = new Set<Element>();
   for (const el of found) {
     const { rect, via } = targetOf(el);
     if (!isVisible(via, rect, viewport, viewportOnly)) continue;
+    shown.add(el);
     elements.push(describe(el, reg.idFor(el), rect, mode === 'full'));
+  }
+  // Upload widgets keep their file input hidden (opacity 0, clipped). Hidden inputs get no ids
+  // otherwise, so list them at a zero rect; only attach_files targets them, never the cursor.
+  for (const el of collectFileInputs(doc)) {
+    if (el.disabled || shown.has(el)) continue;
+    elements.push(describe(el, reg.idFor(el), { x: 0, y: 0, w: 0, h: 0 }, false));
   }
   const headings =
     mode === 'full'

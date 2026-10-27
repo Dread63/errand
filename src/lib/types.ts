@@ -93,6 +93,13 @@ export interface Attachment {
   meta?: string;
 }
 
+/** A file the user attached, as bytes, ready to hand to a page's file input. */
+export interface UploadFile {
+  name: string;
+  /** Data URL (`data:<mime>;base64,<bytes>`) of the original file. */
+  dataUrl: string;
+}
+
 /** What the model saw before a step. `detail` is rendered at capture time for the profile's mode. */
 export interface ObservationRecord {
   url: string;

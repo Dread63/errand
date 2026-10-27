@@ -222,3 +222,21 @@ describe('focusedElementInfo and readPageText', () => {
     expect(readPageText(document, 5)).toBe('Title…[+12 chars]');
   });
 });
+
+describe('hidden file inputs in the snapshot', () => {
+  it('lists file inputs even when the page hides them, at a zero rect, with no fakepath value', () => {
+    document.body.innerHTML = `
+      <button>Upload receipt</button>
+      <input type="file" aria-label="Receipts" style="display:none">`;
+    const s = snap();
+    expect(s.elements.map((e) => `${e.role}:${e.name}`)).toEqual(['button:Upload receipt', 'file:Receipts']);
+    expect(s.elements[1]).toMatchObject({ tag: 'input', type: 'file', rect: { x: 0, y: 0, w: 0, h: 0 } });
+  });
+
+  it('keeps a visible file input in its normal place without duplicating it', () => {
+    document.body.innerHTML = `<input type="file" aria-label="Resume">`;
+    const s = snap();
+    expect(s.elements.filter((e) => e.name === 'Resume')).toHaveLength(1);
+    expect(s.elements[0].role).toBe('file');
+  });
+});

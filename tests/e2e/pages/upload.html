@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Expense form</title>
+</head>
+<body>
+<h1>Expense report</h1>
+<button id="attach">Attach receipt</button>
+<input id="receipt" type="file" hidden>
+<p id="status">No receipt attached yet</p>
+<script>
+  const input = document.getElementById('receipt');
+  const status = document.getElementById('status');
+  document.getElementById('attach').addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    const files = Array.from(input.files ?? []);
+    status.textContent = files.length
+      ? `Received ${files.length} file(s): ${files.map((f) => `${f.name} (${f.size} bytes)`).join(', ')}`
+      : 'No receipt attached yet';
+  });
+</script>
+</body>
+</html>
