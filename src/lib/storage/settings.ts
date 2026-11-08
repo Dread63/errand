@@ -21,7 +21,7 @@ export const DEFAULT_RISKY_KEYWORDS = [
 
 export const DEFAULT_SETTINGS: Settings = {
   activeProfileId: null,
-  stepLimit: 30,
+  troubleLimit: 8,
   riskyKeywords: DEFAULT_RISKY_KEYWORDS,
   debugTiming: false,
   theme: 'system',
@@ -31,7 +31,16 @@ export class SettingsStore {
   constructor(private kv: KV) {}
 
   async get(): Promise<Settings> {
-    return { ...DEFAULT_SETTINGS, ...((await this.kv.get<Partial<Settings>>(KEY)) ?? {}) };
+    // A total-step cap is not a trouble threshold: discard the legacy value.
+    const { stepLimit: _legacy, ...stored } = (await this.kv.get<Partial<Settings> & { stepLimit?: number }>(KEY)) ?? {};
+    const limit = stored.troubleLimit;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...stored,
+      troubleLimit: typeof limit === 'number' && Number.isFinite(limit) && limit >= 1
+        ? Math.min(200, Math.round(limit))
+        : DEFAULT_SETTINGS.troubleLimit,
+    };
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {

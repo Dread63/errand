@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listModels } from '@/lib/llm/client';
 import { chromeKV } from '@/lib/storage/kv';
 import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
-import { SettingsStore } from '@/lib/storage/settings';
+import { DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
 import { ModelCatalog } from '@/lib/storage/models';
 import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
 import type { ContextMode, Profile, Theme } from '@/lib/types';
@@ -301,14 +301,14 @@ function BypassSection() {
 
 function GeneralSection() {
   const store = useMemo(() => new SettingsStore(chromeKV()), []);
-  const [stepLimit, setStepLimit] = useState(30);
+  const [troubleLimit, setTroubleLimit] = useState(DEFAULT_SETTINGS.troubleLimit);
   const [keywords, setKeywords] = useState('');
   const [debugTiming, setDebugTiming] = useState(false);
   const [theme, setTheme] = useState<Theme>('system');
   const [saved, setSaved] = useState('');
   useEffect(() => {
     void store.get().then((s) => {
-      setStepLimit(s.stepLimit);
+      setTroubleLimit(s.troubleLimit);
       setKeywords(s.riskyKeywords.join(', '));
       setDebugTiming(s.debugTiming);
       setTheme(s.theme);
@@ -316,9 +316,9 @@ function GeneralSection() {
   }, [store]);
 
   async function save() {
-    const limit = Math.max(1, Math.min(200, Math.round(stepLimit)));
-    await store.update({ stepLimit: limit, riskyKeywords: parseKeywords(keywords), debugTiming });
-    setStepLimit(limit);
+    const limit = Math.max(1, Math.min(200, Math.round(troubleLimit || DEFAULT_SETTINGS.troubleLimit)));
+    await store.update({ troubleLimit: limit, riskyKeywords: parseKeywords(keywords), debugTiming });
+    setTroubleLimit(limit);
     setSaved('Saved.');
   }
 
@@ -344,7 +344,8 @@ function GeneralSection() {
           ))}
         </div>
       </div>
-      <label>Step limit per task<input type="number" min={1} max={200} value={stepLimit} onChange={(e) => setStepLimit(Number(e.target.value))} /></label>
+      <label>Consecutive problems before asking to continue<input type="number" min={1} max={200} value={troubleLimit} onChange={(e) => setTroubleLimit(Number(e.target.value))} /></label>
+      <p className="muted">Errors and repeated actions on an unchanged page count as problems. Progress resets the count; healthy tasks have no step limit.</p>
       <label>
         Words that make a click need approval (comma or newline separated)
         <textarea rows={4} value={keywords} onChange={(e) => setKeywords(e.target.value)} />

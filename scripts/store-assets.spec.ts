@@ -34,7 +34,7 @@ async function setUp(sw: Worker, llmUrl: string, allowedOrigins: string[]) {
           { ...base, id: 'openrouter', name: 'OpenRouter', baseUrl: llmUrl, model: 'openai/gpt-4o-mini', supportsVision: true },
           { ...base, id: 'ollama', name: 'Ollama (local)', baseUrl: llmUrl, model: 'qwen3:14b', supportsVision: false, contextMode: 'compact', contextWindow: 32768 },
         ],
-        settings: { activeProfileId: 'openrouter', stepLimit: 30, riskyKeywords: risky, debugTiming: false, theme: 'light' },
+        settings: { activeProfileId: 'openrouter', troubleLimit: 30, riskyKeywords: risky, debugTiming: false, theme: 'light' },
         allowedOrigins,
         modelCatalog: {
           openrouter: { fetchedAt: Date.now(), models: ['openai/gpt-4o-mini', 'google/gemini-2.5-flash', 'qwen/qwen3-235b-a22b', 'meta-llama/llama-4-maverick'] },

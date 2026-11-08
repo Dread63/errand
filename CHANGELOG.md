@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The side panel is available only in Errand tab groups; clicking the toolbar icon adds the current tab to the group and opens the panel.
+- Healthy tasks can keep running; after repeated errors or actions on an unchanged page, Errand asks whether to continue.
 
 - The Errand tab group is created when you open the panel, not when you send a prompt, so you can add tabs to it first. Tabs you add or close are picked up live, a stopped task resumes in the same group, and a new group is made only for a new chat. The strip above the message box now shows the group and its tab count.
 - "Auto-approve" is now per site instead of per tab: the checkbox above the message box applies to the page you're on, is saved (and listed in Settings), and unchecking it removes the site. It no longer follows a tab to whatever site the agent navigates to.
