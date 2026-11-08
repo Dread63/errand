@@ -89,6 +89,7 @@ describe('runAgent', () => {
   it('pauses after 3 malformed calls in a row and stops when the user declines', async () => {
     const bad = { content: '', toolCalls: [{ id: '', name: 'click', args: {}, error: 'Tool arguments were not valid JSON: {id' }] };
     const s = setup([bad, bad, bad]);
+    s.deps.settings.troubleLimit = 3;
     const turns = await runAgent(task, s.deps);
     expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toHaveLength(1);
     expect(s.gate.log[s.gate.log.length - 1]).toContain('not valid JSON');
@@ -334,7 +335,7 @@ describe('runAgent', () => {
     expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toEqual([]);
   });
 
-  it('counts repeated calls within a batch and catches alternating loops', async () => {
+  it('a repeated call stops the rest of its batch and tells the model', async () => {
     const s = setup([{
       content: '',
       toolCalls: [
@@ -343,10 +344,19 @@ describe('runAgent', () => {
         ...toolCall('hover', { id: 1 }).toolCalls,
         ...toolCall('select', { id: 1, value: 'a' }).toolCalls,
       ],
-    }]);
+    }, toolCall('done', { summary: 'ok' })]);
+    const turns = await runAgent(task, s.deps);
+    expect(s.driver.performed).toHaveLength(3);
+    expect(steps(turns)[2].result).toContain('No progress');
+  });
+
+  it('catches alternating loops across replies', async () => {
+    const s = setup([
+      toolCall('hover', { id: 1 }), toolCall('select', { id: 1, value: 'a' }),
+      toolCall('hover', { id: 1 }), toolCall('select', { id: 1, value: 'a' }),
+    ]);
     s.deps.settings.troubleLimit = 2;
     await runAgent(task, s.deps);
-    expect(s.driver.performed).toHaveLength(4);
     expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toHaveLength(1);
   });
 

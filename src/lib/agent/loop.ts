@@ -211,9 +211,8 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
   const now = d.now ?? Date.now;
   const limit = d.settings.troubleLimit;
   let trouble = 0;
-  let pageSignature = '';
-  const pageCalls = new Set<string>();
-  let malformed = 0;
+  /** "page state + call" pairs already tried; a repeat means no progress, including A→B→A oscillation. */
+  const tried = new Set<string>();
   let calibration = 1;
   let acted = false;
   /** Set after a mid-task plain-text reply: shown to the model once on the next request. */
@@ -222,12 +221,11 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
 
   const recordOutcome = async (problem?: string) => {
     trouble = problem ? trouble + 1 : 0;
-    if (problem && (trouble >= limit || malformed > 2)) {
+    if (problem && trouble >= limit) {
       if (d.signal.aborted) throw new StopTask('Stopped.');
       const again = await d.gate.retry(`The agent has hit ${trouble} problems in a row: ${problem.replace(/[.!?]+$/, '')}. Keep going?`);
       if (!again) throw new StopTask(`Stopped after ${trouble} consecutive problems: ${problem}`);
       trouble = 0;
-      malformed = 0;
     }
   };
 
@@ -238,13 +236,8 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
       const startedAt = now();
       let prev: { call: ToolCall; role?: string } | undefined;
       const observation = await timed(`step ${n + 1}: observe (total)`, () => guarded(d, () => observe(d)));
-      // Compare exactly the URL and rendered text the model sees, excluding screenshots.
-      // Retain calls only while this observation stays unchanged, including alternating loops.
+      // Exactly the URL and rendered text the model sees, excluding screenshots.
       const signature = JSON.stringify([observation.url, observation.detail, observation.tabs]);
-      if (signature !== pageSignature) {
-        pageCalls.clear();
-        pageSignature = signature;
-      }
       const messages = buildMessages({ profile: d.profile, turns, current: observation, calibration });
       if (nudge) messages.push(...nudge);
       nudge = null;
@@ -298,10 +291,8 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           call = validateCall(step.call, d.profile.supportsVision);
           step.call = call;
           step.label = describeCall(call);
-          malformed = 0;
         } catch (e) {
           if (!(e instanceof ToolError)) throw e;
-          malformed++;
           step.label = 'Invalid tool call';
           step.result = `Error: ${e.message}`;
           push(step);
@@ -324,9 +315,11 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           break;
         }
 
-        const key = callSignature(call);
-        const repeated = pageCalls.has(key);
-        pageCalls.add(key);
+        const key = signature + callSignature(call);
+        const repeated = tried.has(key);
+        // ponytail: bounded by clearing; a cleared set only forgets old loops, never blocks progress.
+        if (tried.size > 500) tried.clear();
+        tried.add(key);
         const out: { role?: string } = {};
         step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step, out)));
         acted = true;
@@ -340,10 +333,13 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           push({ kind: 'assistant', text: done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.' });
           return turns;
         }
+        const noProgress = !step.result.startsWith('Error') && repeated;
+        // Tell the model too, so it changes approach instead of repeating itself.
+        if (noProgress) step.result += ' (No progress: this exact action was already tried on this same page state.)';
         await recordOutcome(step.result.startsWith('Error')
           ? step.result
-          : repeated ? `No progress: repeated ${call.name} with the same arguments on an unchanged page` : undefined);
-        if (step.result.startsWith('Error')) break;
+          : noProgress ? `No progress: repeated ${call.name} with the same arguments on an unchanged page` : undefined);
+        if (noProgress || step.result.startsWith('Error')) break;
         prev = { call, role: out.role };
       }
     }
