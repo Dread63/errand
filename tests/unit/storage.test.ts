@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { memoryKV } from '@/lib/storage/kv';
 import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
 import { DEFAULT_RISKY_KEYWORDS, DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
-import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
+import { SitePermissionStore } from '@/lib/storage/sites';
 import { HistoryStore } from '@/lib/storage/history';
 import type { Conversation, Profile } from '@/lib/types';
 
@@ -103,6 +103,26 @@ describe('SettingsStore', () => {
       expect((await store.get()).troubleLimit).toBe(8);
     }
   });
+
+  it('stores Ask, Auto, and Hands-off, and falls back to Ask', async () => {
+    const kv = memoryKV();
+    const store = new SettingsStore(kv);
+    expect((await store.get()).approvalMode).toBe('ask');
+    expect((await store.update({ approvalMode: 'auto' })).approvalMode).toBe('auto');
+    expect((await store.update({ approvalMode: 'hands-off' })).approvalMode).toBe('hands-off');
+    await kv.set('settings', { approvalMode: 'always', debugTiming: true });
+    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true, approvalMode: 'ask' });
+  });
+
+  it('deletes a saved auto-approve site list instead of keeping it', async () => {
+    const kv = memoryKV();
+    await kv.set('bypassOrigins', ['https://shop.test', 'https://pay.test']);
+    await kv.set('settings', { approvalMode: 'auto' });
+    const store = new SettingsStore(kv);
+    expect((await store.get()).approvalMode).toBe('auto');
+    expect(await kv.get('bypassOrigins')).toBeUndefined();
+    expect((await store.get()).approvalMode).toBe('auto');
+  });
 });
 
 describe('SitePermissionStore', () => {
@@ -162,13 +182,3 @@ describe('HistoryStore', () => {
   });
 });
 
-describe('BypassStore', () => {
-  it('is scoped to the site, so another site never inherits it, and unchecking removes it', async () => {
-    const s = new BypassStore(memoryKV());
-    await s.setOrigin('https://a.test', true);
-    expect(await s.applies('https://a.test')).toBe(true);
-    expect(await s.applies('https://b.test')).toBe(false);
-    await s.setOrigin('https://a.test', false);
-    expect(await s.origins()).toEqual([]);
-  });
-});

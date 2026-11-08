@@ -93,6 +93,7 @@
 .tabchip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .composer { position: relative; margin: 0 12px 12px; padding: 10px 10px 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); background: var(--bg); box-shadow: var(--shadow); }
+.composer .mode { margin-bottom: 8px; }
 .composer:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong)); }
 .composer textarea { width: 100%; border: 0; outline: none; resize: none; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; min-height: 22px; max-height: 200px; }
 .composer textarea::placeholder { color: var(--faint); }
@@ -134,5 +135,7 @@
 .history-open { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; border: 0; background: transparent; padding: 8px 10px; }
 .history-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .history time { color: var(--muted); font-size: 11.5px; }
-.bypass { display: flex; gap: 6px; align-items: center; margin: 0 12px 6px; font-size: 11.5px; color: var(--muted); }
-.bypass.on { color: var(--accent); font-weight: 600; }
+.mode { display: inline-flex; padding: 2px; gap: 1px; border-radius: 999px; background: var(--surface-2); }
+.mode button { border: 0; background: transparent; border-radius: 999px; padding: 3px 7px; font-size: 11px; color: var(--muted); }
+.mode button.on { background: var(--bg); color: var(--fg); font-weight: 600; }
+.mode button:disabled { opacity: 0.55; }

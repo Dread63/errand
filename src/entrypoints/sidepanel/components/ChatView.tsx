@@ -38,7 +38,7 @@ export function ChatView({ turns, streaming, reasoning, running, connected }: Pr
           <div className="empty">
             <Logo size={48} />
             <h2>What should I do in this tab?</h2>
-            <p>I'll ask before using a new site or doing anything risky.</p>
+            <p>Ask checks each risky step. Auto and Hands-off handle routine ones. Passwords and payments always need approval.</p>
           </div>
         ) : (
           <div className="empty">

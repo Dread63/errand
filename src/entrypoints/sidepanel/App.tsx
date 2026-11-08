@@ -3,7 +3,7 @@ import { chromeKV } from '@/lib/storage/kv';
 import { selectModel } from '@/lib/storage/models';
 import { ProfileStore } from '@/lib/storage/profiles';
 import { SettingsStore } from '@/lib/storage/settings';
-import type { Attachment } from '@/lib/types';
+import type { ApprovalMode, Attachment } from '@/lib/types';
 import { IconX } from '@/lib/ui/icons';
 import { canSend, supportsVisionFor } from '@/lib/ui/models';
 import { targetTabId } from '@/lib/ui/targetTab';
@@ -26,6 +26,7 @@ export function App() {
   const { catalog, refreshAll, refreshOne, refreshing } = useModelCatalog(profiles);
   const stores = useMemo(() => ({ profiles: new ProfileStore(chromeKV()), settings: new SettingsStore(chromeKV()) }), []);
   const [view, setView] = useState<'chat' | 'history'>('chat');
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('ask');
 
   const firstUser = state.turns.find((t) => t.kind === 'user');
   const title = firstUser && firstUser.kind === 'user' ? firstUser.text : 'New chat';
@@ -34,6 +35,14 @@ export function App() {
   useEffect(() => {
     void targetTabId().then((tabId) => tabId !== undefined && send({ type: 'prepare', tabId, fresh: false }));
   }, [send]);
+
+  useEffect(() => {
+    const load = () => void stores.settings.get().then((s) => setApprovalMode(s.approvalMode));
+    void load();
+    const onChanged = () => load();
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, [stores]);
 
   async function newChat() {
     dispatch({ type: 'new_chat' });
@@ -90,6 +99,11 @@ export function App() {
             running={state.running}
             ready={canSend(active)}
             vision={active ? supportsVisionFor(active, active.model) : false}
+            approvalMode={approvalMode}
+            onApprovalMode={(mode) => {
+              setApprovalMode(mode);
+              void stores.settings.update({ approvalMode: mode });
+            }}
             modelMenu={
               <ModelMenu
                 profiles={profiles}

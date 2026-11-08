@@ -1,5 +1,5 @@
 import type { AgentDeps } from '@/lib/agent/loop';
-import type { BrowserDriver, RiskyRequest, UserGate } from '@/lib/agent/ports';
+import type { BrowserDriver, RiskyDecision, RiskyRequest, UserGate } from '@/lib/agent/ports';
 import { ToolError } from '@/lib/errors';
 import type { ChatRequest, LlmClient } from '@/lib/llm/client';
 import type { ChatResult } from '@/lib/llm/types';
@@ -106,7 +106,7 @@ export class FakeDriver implements BrowserDriver {
 
 export class FakeGate implements UserGate {
   siteAnswers: Array<'once' | 'always' | 'deny'> = [];
-  riskyAnswers: boolean[] = [];
+  riskyAnswers: Array<boolean | 'task'> = [];
   askAnswers: string[] = [];
   retryAnswers: boolean[] = [];
   log: string[] = [];
@@ -114,9 +114,11 @@ export class FakeGate implements UserGate {
     this.log.push(`site:${origin}`);
     return this.siteAnswers.shift() ?? 'once';
   }
-  async risky(r: RiskyRequest) {
+  async risky(r: RiskyRequest): Promise<RiskyDecision> {
     this.log.push(`risky:${r.description}`);
-    return this.riskyAnswers.shift() ?? false;
+    const answer = this.riskyAnswers.shift() ?? false;
+    if (answer === 'task') return 'task';
+    return answer ? 'approve' : 'reject';
   }
   async ask(q: string) {
     this.log.push(`ask:${q}`);

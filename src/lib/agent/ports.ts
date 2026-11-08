@@ -17,9 +17,12 @@ export interface RiskyRequest {
   reason: string;
 }
 
+/** `task` approves the action on screen and skips later routine prompts until the task ends. */
+export type RiskyDecision = 'approve' | 'reject' | 'task';
+
 export interface UserGate {
   site(origin: string): Promise<SiteDecision>;
-  risky(req: RiskyRequest): Promise<boolean>;
+  risky(req: RiskyRequest): Promise<RiskyDecision>;
   ask(question: string): Promise<string>;
   retry(message: string): Promise<boolean>;
 }

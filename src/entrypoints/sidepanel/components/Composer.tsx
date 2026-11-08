@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { readAttachment } from '@/lib/attachments';
-import type { Attachment } from '@/lib/types';
+import type { ApprovalMode, Attachment } from '@/lib/types';
+import { ApprovalModeSwitch } from '@/lib/ui/ApprovalModeSwitch';
 import { IconPaperclip, IconSend, IconStop } from '@/lib/ui/icons';
 import { sendBlock } from '@/lib/ui/models';
 import { AttachmentTray } from './AttachmentTray';
@@ -9,12 +10,14 @@ interface Props {
   running: boolean;
   vision: boolean;
   ready: boolean;
+  approvalMode: ApprovalMode;
   modelMenu: ReactNode;
+  onApprovalMode(mode: ApprovalMode): void;
   onSend(text: string, attachments: Attachment[]): void;
   onStop(): void;
 }
 
-export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: Props) {
+export function Composer({ running, vision, ready, approvalMode, modelMenu, onApprovalMode, onSend, onStop }: Props) {
   const [text, setText] = useState('');
   const [atts, setAtts] = useState<Attachment[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -101,6 +104,7 @@ export function Composer({ running, vision, ready, modelMenu, onSend, onStop }: 
   return (
     <div className={`composer${dragging ? ' dragging' : ''}`}>
       {dragging && <div className="dropzone">Drop files to attach</div>}
+      <ApprovalModeSwitch value={approvalMode} disabled={running} onChange={onApprovalMode} />
       <AttachmentTray items={atts} onRemove={(i) => setAtts((p) => p.filter((_, j) => j !== i))} />
       {(err || blocked) && <div className="composer-error" role="alert">{err ?? blocked}</div>}
       <textarea

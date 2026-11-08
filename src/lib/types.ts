@@ -1,6 +1,8 @@
 export type ContextMode = 'compact' | 'standard' | 'full';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 export type Theme = 'system' | 'light' | 'dark';
+/** How much a task may proceed without asking. A bad stored value falls back to Ask. */
+export type ApprovalMode = 'ask' | 'auto' | 'hands-off';
 
 export interface Profile {
   id: string;
@@ -25,6 +27,8 @@ export interface Settings {
   /** Log per-phase step timings to the service worker console. */
   debugTiming: boolean;
   theme: Theme;
+  /** Applies to each new task. An in-task "allow for the rest" grant is not stored here. */
+  approvalMode: ApprovalMode;
 }
 
 export interface Rect {

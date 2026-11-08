@@ -24,7 +24,7 @@ const isEnter = (combo: unknown) => String(combo).split('+').pop()?.trim().toLow
 
 export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: string[]): { risky: boolean; reasons: string[]; hard: boolean } {
   const reasons: string[] = [];
-  /** Reasons a bypass never skips: credentials, payment and checkout-style labels. */
+  /** Reasons a task mode or task grant never skips: credentials, payment and checkout-style labels. */
   let hard = false;
   const e = target.element;
   if (e) {

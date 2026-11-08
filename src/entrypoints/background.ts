@@ -10,7 +10,7 @@ import { HistoryStore } from '@/lib/storage/history';
 import { chromeKV } from '@/lib/storage/kv';
 import { ProfileStore } from '@/lib/storage/profiles';
 import { SettingsStore } from '@/lib/storage/settings';
-import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
+import { SitePermissionStore } from '@/lib/storage/sites';
 
 export default defineBackground(() => {
   const panels = new GroupSidePanel(chrome);
@@ -26,7 +26,6 @@ export default defineBackground(() => {
         profiles: new ProfileStore(kv),
         settings: new SettingsStore(kv),
         siteStore: new SitePermissionStore(kv),
-        bypass: new BypassStore(kv),
         history: new HistoryStore(kv),
         makeLlm: (profile) => new OpenAIClient(profile),
         workspace: agentTabs,
