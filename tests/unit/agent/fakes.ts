@@ -154,7 +154,7 @@ export function setup(script: Array<FakeReply | Error>) {
     gate,
     sites: new SitePolicy(siteStore),
     profile: testProfile,
-    settings: { ...DEFAULT_SETTINGS, stepLimit: 10 },
+    settings: { ...DEFAULT_SETTINGS, troubleLimit: 10 },
     hooks: { onTurns: (t) => turnsSeen.push(t), onDelta: () => {} },
     signal: ctrl.signal,
     newId: () => `id${++n}`,

@@ -40,7 +40,7 @@ const imageCount = (m: ChatMessage[]) => (text(m).match(/"type":"image_url"/g) ?
 
 describe('buildMessages', () => {
   it('orders system, user, observation, assistant tool call, tool result, current observation', () => {
-    const m = buildMessages({ profile: profile(), stepLimit: 30, turns: [user, step(1)], current: obs(2) });
+    const m = buildMessages({ profile: profile(), turns: [user, step(1)], current: obs(2) });
     expect(m.map((x) => x.role)).toEqual(['system', 'user', 'user', 'assistant', 'tool', 'user']);
     const a = m[3] as Extract<ChatMessage, { role: 'assistant' }>;
     expect(a.tool_calls?.[0]).toEqual({ id: 'c1', type: 'function', function: { name: 'click', arguments: '{"id":1}' } });
@@ -49,7 +49,7 @@ describe('buildMessages', () => {
   });
 
   it('compact: only the current observation is detailed', () => {
-    const m = buildMessages({ profile: profile({ contextMode: 'compact' }), stepLimit: 30, turns: [user, step(1), step(2)], current: obs(3) });
+    const m = buildMessages({ profile: profile({ contextMode: 'compact' }), turns: [user, step(1), step(2)], current: obs(3) });
     const t = text(m);
     expect(t).toContain('SUMMARY-1');
     expect(t).toContain('SUMMARY-2');
@@ -59,7 +59,7 @@ describe('buildMessages', () => {
 
   it('standard: the last 2 prior observations are detailed', () => {
     const t = text(
-      buildMessages({ profile: profile(), stepLimit: 30, turns: [user, step(1), step(2), step(3)], current: obs(4) }),
+      buildMessages({ profile: profile(), turns: [user, step(1), step(2), step(3)], current: obs(4) }),
     );
     expect(t).toContain('SUMMARY-1');
     expect(t).toContain('DETAIL-2');
@@ -68,21 +68,21 @@ describe('buildMessages', () => {
 
   it('full: all prior observations are detailed', () => {
     const t = text(
-      buildMessages({ profile: profile({ contextMode: 'full' }), stepLimit: 30, turns: [user, step(1), step(2), step(3)], current: obs(4) }),
+      buildMessages({ profile: profile({ contextMode: 'full' }), turns: [user, step(1), step(2), step(3)], current: obs(4) }),
     );
     expect(t).toContain('DETAIL-1');
   });
 
   it('sends no images without vision', () => {
     const turns: Turn[] = [{ kind: 'user', text: 'see', attachments: [{ name: 'a.png', kind: 'image', dataUrl: 'data:image/png;base64,A' }] }, step(1, true)];
-    expect(imageCount(buildMessages({ profile: profile(), stepLimit: 30, turns, current: obs(2, true) }))).toBe(0);
+    expect(imageCount(buildMessages({ profile: profile(), turns, current: obs(2, true) }))).toBe(0);
   });
 
   it('vision compact/standard: only the latest screenshot; full: up to maxScreenshots', () => {
     const turns: Turn[] = [user, step(1, true), step(2, true), step(3, true)];
-    expect(imageCount(buildMessages({ profile: profile({ supportsVision: true }), stepLimit: 30, turns, current: obs(4, true) }))).toBe(1);
+    expect(imageCount(buildMessages({ profile: profile({ supportsVision: true }), turns, current: obs(4, true) }))).toBe(1);
     expect(
-      imageCount(buildMessages({ profile: profile({ supportsVision: true, contextMode: 'full', maxScreenshots: 3 }), stepLimit: 30, turns, current: obs(4, true) })),
+      imageCount(buildMessages({ profile: profile({ supportsVision: true, contextMode: 'full', maxScreenshots: 3 }), turns, current: obs(4, true) })),
     ).toBe(3);
   });
 
@@ -91,11 +91,11 @@ describe('buildMessages', () => {
     const turns: Turn[] = [
       { kind: 'user', text: 'read', attachments: [{ name: 'a.png', kind: 'image', dataUrl: 'data:image/png;base64,A' }, { name: 'n.txt', kind: 'text', text: long }] },
     ];
-    const compact = buildMessages({ profile: profile({ contextMode: 'compact', supportsVision: true }), stepLimit: 30, turns, current: null });
+    const compact = buildMessages({ profile: profile({ contextMode: 'compact', supportsVision: true }), turns, current: null });
     expect(imageCount(compact)).toBe(1);
     expect(text(compact)).toContain('<attachment name=\\"n.txt\\">');
     expect(text(compact)).toContain('[+10000 chars]');
-    const standard = buildMessages({ profile: profile({ supportsVision: true }), stepLimit: 30, turns, current: null });
+    const standard = buildMessages({ profile: profile({ supportsVision: true }), turns, current: null });
     expect(text(standard)).not.toContain('[+');
   });
 
@@ -103,7 +103,7 @@ describe('buildMessages', () => {
     const big = (n: number): Turn => ({ ...(step(n) as Extract<Turn, { kind: 'step' }>), observation: { ...obs(n), detail: `DETAIL-${n} ${'d'.repeat(8000)}` }, result: `RESULT-${n} ${'r'.repeat(4000)}` });
     const p = profile({ contextMode: 'full', contextWindow: 16_000 });
     const turns: Turn[] = [user, big(1), big(2), big(3), big(4), big(5), big(6)];
-    const m = buildMessages({ profile: p, stepLimit: 30, turns, current: obs(7) });
+    const m = buildMessages({ profile: p, turns, current: obs(7) });
     expect(estimateTokens(m)).toBeLessThanOrEqual(contextBudget(p));
     const t = text(m);
     expect(t).toContain('Buy socks');
@@ -114,8 +114,8 @@ describe('buildMessages', () => {
   it('applies calibration from real usage', () => {
     const p = profile({ contextMode: 'full', contextWindow: 16_000 });
     const turns: Turn[] = [user, step(1), step(2)];
-    const plain = text(buildMessages({ profile: p, stepLimit: 30, turns, current: obs(3) }));
-    const inflated = text(buildMessages({ profile: p, stepLimit: 30, turns, current: obs(3), calibration: 1000 }));
+    const plain = text(buildMessages({ profile: p, turns, current: obs(3) }));
+    const inflated = text(buildMessages({ profile: p, turns, current: obs(3), calibration: 1000 }));
     expect(plain).toContain('DETAIL-1');
     expect(inflated).not.toContain('DETAIL-1');
   });

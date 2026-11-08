@@ -20,7 +20,7 @@ export interface Profile {
 
 export interface Settings {
   activeProfileId: string | null;
-  stepLimit: number;
+  troubleLimit: number;
   riskyKeywords: string[];
   /** Log per-phase step timings to the service worker console. */
   debugTiming: boolean;

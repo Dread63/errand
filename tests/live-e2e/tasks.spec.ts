@@ -175,7 +175,7 @@ test.describe('live agent tasks', () => {
         });
         await sw.evaluate(async () => {
           const { settings } = (await chrome.storage.local.get('settings')) as { settings: object };
-          await chrome.storage.local.set({ settings: { ...settings, stepLimit: 25, debugTiming: true } });
+          await chrome.storage.local.set({ settings: { ...settings, troubleLimit: 25, debugTiming: true } });
         });
         const timings = collectTimings(sw);
         const page = await context.newPage();

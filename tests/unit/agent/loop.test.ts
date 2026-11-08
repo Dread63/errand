@@ -89,10 +89,11 @@ describe('runAgent', () => {
   it('pauses after 3 malformed calls in a row and stops when the user declines', async () => {
     const bad = { content: '', toolCalls: [{ id: '', name: 'click', args: {}, error: 'Tool arguments were not valid JSON: {id' }] };
     const s = setup([bad, bad, bad]);
+    s.deps.settings.troubleLimit = 3;
     const turns = await runAgent(task, s.deps);
     expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toHaveLength(1);
     expect(s.gate.log[s.gate.log.length - 1]).toContain('not valid JSON');
-    expect(last(turns)).toEqual({ kind: 'assistant', text: 'Stopped after repeated invalid tool calls.' });
+    expect(last(turns)).toEqual({ kind: 'assistant', text: expect.stringContaining('Stopped after 3 consecutive problems: Error: Tool arguments') });
   });
 
   it('Review Focus: a stale element id becomes an error for the model and the loop continues', async () => {
@@ -241,12 +242,122 @@ describe('runAgent', () => {
     expect(last(turns)).toEqual({ kind: 'assistant', text: 'moved on' });
   });
 
-  it('stops at the step limit', async () => {
-    const s = setup(Array.from({ length: 5 }, () => toolCall('wait', { ms: 1 })));
-    s.deps.settings = { ...s.deps.settings, stepLimit: 3 };
+  it('allows 60 successful steps without a total-step cap', async () => {
+    const s = setup([
+      ...Array.from({ length: 60 }, (_, i) => toolCall('navigate', { url: `https://shop.test/page/${i}` })),
+      toolCall('done', { summary: 'Long task complete' }),
+    ]);
+    const turns = await runAgent(task, s.deps);
+    expect(s.driver.performed).toHaveLength(60);
+    expect(last(turns)).toEqual({ kind: 'assistant', text: 'Long task complete' });
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toEqual([]);
+    expect(JSON.stringify(s.llm.requests[0].messages)).not.toContain('You have at most');
+  });
+
+  it('asks after N consecutive tool errors and stops with the last error', async () => {
+    const s = setup(Array.from({ length: 4 }, () => toolCall('click', { id: 99 })));
+    s.deps.settings.troubleLimit = 3;
+    const turns = await runAgent(task, s.deps);
+    expect(s.llm.requests).toHaveLength(3);
+    expect(s.gate.log).toContain('retry:The agent has hit 3 problems in a row: Error: Element [99] no longer exists on the page. Keep going?');
+    expect(last(turns)).toMatchObject({ text: expect.stringContaining('Stopped after 3 consecutive problems') });
+  });
+
+  it('Retry resets the trouble count and allows another full budget', async () => {
+    const s = setup(Array.from({ length: 6 }, () => toolCall('click', { id: 99 })));
+    s.deps.settings.troubleLimit = 3;
+    s.gate.retryAnswers = [true, false];
+    await runAgent(task, s.deps);
+    expect(s.llm.requests).toHaveLength(6);
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toHaveLength(2);
+  });
+
+  it('success resets consecutive errors, including mixed malformed and tool errors', async () => {
+    const s = setup([
+      toolCall('click', {}), toolCall('click', { id: 99 }),
+      toolCall('click', { id: 1 }),
+      toolCall('click', { id: 99 }), toolCall('click', {}),
+      toolCall('done', { summary: 'Recovered' }),
+    ]);
+    s.deps.settings.troubleLimit = 3;
+    expect(last(await runAgent(task, s.deps))).toMatchObject({ text: 'Recovered' });
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toEqual([]);
+  });
+
+  it('identical calls on an unchanged page consume trouble, ignoring argument order and call ids', async () => {
+    const s = setup([
+      toolCall('type', { id: 1, text: 'hello' }),
+      toolCall('type', { text: 'hello', id: 1 }),
+      toolCall('type', { id: 1, text: 'hello' }),
+    ]);
+    s.deps.settings.troubleLimit = 2;
     const turns = await runAgent(task, s.deps);
     expect(s.driver.performed).toHaveLength(3);
-    expect(last(turns)).toEqual({ kind: 'assistant', text: 'Stopped: reached the step limit of 3 steps.' });
+    expect(last(turns)).toMatchObject({ text: expect.stringContaining('No progress: repeated type') });
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toHaveLength(1);
+  });
+
+  it('a different successful action resets repetition trouble', async () => {
+    const s = setup([
+      toolCall('hover', { id: 1 }), toolCall('hover', { id: 1 }),
+      toolCall('click', { id: 1 }), toolCall('hover', { id: 1 }),
+      toolCall('done', { summary: 'Recovered' }),
+    ]);
+    s.deps.settings.troubleLimit = 2;
+    expect(last(await runAgent(task, s.deps))).toMatchObject({ text: 'Recovered' });
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toEqual([]);
+  });
+
+  it('uses the configured threshold when malformed calls exhaust trouble sooner', async () => {
+    const s = setup([toolCall('click', {}), toolCall('click', {}), toolCall('done', { summary: 'Recovered' })]);
+    s.deps.settings.troubleLimit = 2;
+    s.gate.retryAnswers = [true];
+    expect(last(await runAgent(task, s.deps))).toMatchObject({ text: 'Recovered' });
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toEqual([
+      'retry:The agent has hit 2 problems in a row: Error: click requires "id". Keep going?',
+    ]);
+  });
+
+  it('changed observations make repeating a call progress', async () => {
+    const s = setup([
+      ...Array.from({ length: 10 }, () => toolCall('click', { id: 1 })),
+      toolCall('done', { summary: 'Progress' }),
+    ]);
+    const perform = s.driver.perform.bind(s.driver);
+    s.driver.perform = async (c) => {
+      const result = await perform(c);
+      s.driver.elements[1].name = `Page ${s.driver.performed.length}`;
+      return result;
+    };
+    s.deps.settings.troubleLimit = 2;
+    expect(last(await runAgent(task, s.deps))).toMatchObject({ text: 'Progress' });
+    expect(s.driver.performed).toHaveLength(10);
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toEqual([]);
+  });
+
+  it('a repeated call stops the rest of its batch and tells the model', async () => {
+    const s = setup([{
+      content: '',
+      toolCalls: [
+        ...toolCall('hover', { id: 1 }).toolCalls,
+        ...toolCall('select', { id: 1, value: 'a' }).toolCalls,
+        ...toolCall('hover', { id: 1 }).toolCalls,
+        ...toolCall('select', { id: 1, value: 'a' }).toolCalls,
+      ],
+    }, toolCall('done', { summary: 'ok' })]);
+    const turns = await runAgent(task, s.deps);
+    expect(s.driver.performed).toHaveLength(3);
+    expect(steps(turns)[2].result).toContain('No progress');
+  });
+
+  it('catches alternating loops across replies', async () => {
+    const s = setup([
+      toolCall('hover', { id: 1 }), toolCall('select', { id: 1, value: 'a' }),
+      toolCall('hover', { id: 1 }), toolCall('select', { id: 1, value: 'a' }),
+    ]);
+    s.deps.settings.troubleLimit = 2;
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('retry:'))).toHaveLength(1);
   });
 
   it('stops when aborted', async () => {
