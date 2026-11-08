@@ -33,13 +33,15 @@ export default defineBackground(() => {
         makeDriver: () => new ChromeDriver(agentTabs, new Cdp(), new ContentMessenger()),
       },
     );
+    // Dispatch in arrival order, but don't wait for a handler to finish ('start' runs the whole task).
+    let dispatch = Promise.resolve();
     port.onMessage.addListener((m: PanelToBg) => {
-      // The panel can connect before toolbar adoption finishes. Do not let prepare()
-      // create a competing workspace while the clicked tab is being grouped.
-      void (async () => {
+      dispatch = dispatch.then(async () => {
+        // The panel can connect before toolbar adoption finishes. Do not let prepare()
+        // create a competing workspace while the clicked tab is being grouped.
         if (m.type === 'prepare' || m.type === 'start') await panels.ready();
-        await session.handle(m);
-      })();
+        void session.handle(m);
+      });
     });
     port.onDisconnect.addListener(() => session.dispose());
   });

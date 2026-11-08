@@ -29,14 +29,14 @@ function setup() {
         if (!groups.has(groupId)) groups.set(groupId, { id: groupId, windowId: tabs.get(tabIds[0])!.windowId, title: '' });
         return groupId;
       }),
-      onUpdated: event(), onCreated: event(),
+      onUpdated: event(), onCreated: event(), onAttached: event(), onDetached: event(),
     },
     tabGroups: {
       get: vi.fn(async (id: number) => {
         if (!groups.has(id)) throw new Error('Group removed');
         return { ...groups.get(id)! };
       }),
-      query: vi.fn(async ({ windowId, title }: { windowId: number; title: string }) => [...groups.values()].filter((g) => g.windowId === windowId && g.title === title)),
+      query: vi.fn(async ({ windowId, title }: { windowId?: number; title: string }) => [...groups.values()].filter((g) => (windowId === undefined || g.windowId === windowId) && g.title === title)),
       update: vi.fn(async (id: number, changes: object) => Object.assign(groups.get(id)!, changes)),
       onUpdated: event(), onRemoved: event(),
     },
@@ -142,5 +142,14 @@ describe('group side panel', () => {
     release();
     await controller.ready();
     expect(options.get(2)?.enabled).toBe(true);
+  });
+  it('disables a tab dragged out to another window', async () => {
+    const { controller, api, tabs, options } = setup();
+    await controller.ready();
+    expect(options.get(1)?.enabled).toBe(true);
+    Object.assign(tabs.get(1)!, { windowId: 30, groupId: -1 });
+    api.tabs.onAttached.fire(1, { newWindowId: 30, newPosition: 0 });
+    await controller.ready();
+    expect(options.get(1)?.enabled).toBe(false);
   });
 });

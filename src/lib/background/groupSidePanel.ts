@@ -4,7 +4,7 @@ import { GROUP_TITLE } from '../browser/tabs';
 export const PANEL_PATH = 'sidepanel.html';
 
 export interface GroupSidePanelApi {
-  tabs: Pick<typeof chrome.tabs, 'query' | 'get' | 'group' | 'onUpdated' | 'onCreated'>;
+  tabs: Pick<typeof chrome.tabs, 'query' | 'get' | 'group' | 'onUpdated' | 'onCreated' | 'onAttached' | 'onDetached'>;
   tabGroups: Pick<typeof chrome.tabGroups, 'get' | 'query' | 'update' | 'onUpdated' | 'onRemoved'>;
   sidePanel: Pick<typeof chrome.sidePanel, 'setOptions' | 'setPanelBehavior' | 'open'>;
   action: Pick<typeof chrome.action, 'onClicked'>;
@@ -38,6 +38,9 @@ export class GroupSidePanel {
       if (change.groupId !== undefined) this.enqueue(() => this.sync());
     });
     tabs.onCreated.addListener(() => this.enqueue(() => this.sync()));
+    // Moving a tab to another window drops it from its group without a groupId onUpdated.
+    tabs.onAttached.addListener(() => this.enqueue(() => this.sync()));
+    tabs.onDetached.addListener(() => this.enqueue(() => this.sync()));
     tabGroups.onUpdated.addListener(() => this.enqueue(() => this.sync()));
     tabGroups.onRemoved.addListener(() => this.enqueue(() => this.sync()));
     action.onClicked.addListener((tab) => this.open(tab));
@@ -50,16 +53,17 @@ export class GroupSidePanel {
   }
 
   private async sync(): Promise<void> {
-    for (const tab of await this.api.tabs.query({})) {
-      if (tab.id === undefined) continue;
-      const enabled = await this.isMember(tab);
-      // A toolbar click temporarily enables the tab before async adoption. A scan
-      // already in flight must not undo that enable while open() is processing.
-      if (this.opening.has(tab.id)) continue;
-      await this.api.sidePanel.setOptions({ tabId: tab.id, path: PANEL_PATH, enabled }).catch(() => {
+    const groups = new Set((await this.api.tabGroups.query({ title: GROUP_TITLE })).map((g) => g.id));
+    await Promise.all(
+      (await this.api.tabs.query({})).map(async (tab) => {
+        // A toolbar click temporarily enables the tab before async adoption. A scan
+        // already in flight must not undo that enable while open() is processing.
+        if (tab.id === undefined || this.opening.has(tab.id)) return;
+        const enabled = tab.groupId !== undefined && groups.has(tab.groupId);
         // Tabs may close while a scan is in flight.
-      });
-    }
+        await this.api.sidePanel.setOptions({ tabId: tab.id, path: PANEL_PATH, enabled }).catch(() => {});
+      }),
+    );
   }
 
   private open(tab: chrome.tabs.Tab): void {
