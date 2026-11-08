@@ -22,7 +22,7 @@ export interface TabGroupsApi {
   update(groupId: number, p: { title?: string; color?: string }): Promise<unknown>;
 }
 
-const GROUP_TITLE = 'Errand';
+export const GROUP_TITLE = 'Errand';
 const NO_GROUP = -1;
 
 /**
