@@ -1,3 +1,4 @@
+import { GroupSidePanel } from '@/lib/background/groupSidePanel';
 import { PanelSession } from '@/lib/background/session';
 import { Cdp } from '@/lib/browser/cdp';
 import { ChromeDriver } from '@/lib/browser/driver';
@@ -12,7 +13,8 @@ import { SettingsStore } from '@/lib/storage/settings';
 import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
 
 export default defineBackground(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  const panels = new GroupSidePanel(chrome);
+  panels.start();
 
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== PANEL_PORT) return;
@@ -32,7 +34,12 @@ export default defineBackground(() => {
       },
     );
     port.onMessage.addListener((m: PanelToBg) => {
-      void session.handle(m);
+      // The panel can connect before toolbar adoption finishes. Do not let prepare()
+      // create a competing workspace while the clicked tab is being grouped.
+      void (async () => {
+        if (m.type === 'prepare' || m.type === 'start') await panels.ready();
+        await session.handle(m);
+      })();
     });
     port.onDisconnect.addListener(() => session.dispose());
   });
