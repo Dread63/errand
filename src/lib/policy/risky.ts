@@ -20,7 +20,9 @@ function matchKeyword(label: string, keywords: string[]): string | null {
   return null;
 }
 
-const isEnter = (combo: unknown) => String(combo).split('+').pop()?.trim().toLowerCase() === 'enter';
+const lastKey = (combo: unknown) => String(combo).split('+').pop()?.trim().toLowerCase();
+const isEnter = (combo: unknown) => ['enter', 'return'].includes(lastKey(combo) ?? '');
+const isSpace = (combo: unknown) => lastKey(combo) === 'space';
 
 export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: string[]): { risky: boolean; reasons: string[]; hard: boolean } {
   const reasons: string[] = [];
@@ -34,14 +36,22 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
     }
     const typesEnter = call.args.submit === true || /[\r\n]/.test(String(call.args.text ?? ''));
     if (call.name === 'type' && typesEnter && e.inForm) reasons.push('Pressing Enter inside a form');
-    if (call.name === 'key' && isEnter(call.args.combo) && e.inForm) reasons.push('Pressing Enter inside a form');
-    if (call.name === 'click') {
-      if (e.isSubmit) reasons.push('Clicking a submit button');
+    const pressesEnter = call.name === 'key' && isEnter(call.args.combo);
+    if (pressesEnter && e.inForm) reasons.push('Pressing Enter inside a form');
+    if (pressesEnter && isSensitiveField(e)) {
+      reasons.push('Pressing Enter in a password, payment or one-time-code field');
+      hard = true;
+    }
+    // Enter and Space activate a focused button just as a click does.
+    if (call.name === 'click' || pressesEnter || (call.name === 'key' && isSpace(call.args.combo))) {
       const kw = matchKeyword(e.name, keywords);
       if (kw) {
         reasons.push(`Label contains "${kw}"`);
         hard = true;
       }
+    }
+    if (call.name === 'click') {
+      if (e.isSubmit) reasons.push('Clicking a submit button');
       if (e.download || (e.href && FILE_EXT.test(e.href))) reasons.push('May download a file');
       if (e.type === 'file') reasons.push('Opens a file upload');
     }

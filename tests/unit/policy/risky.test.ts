@@ -53,6 +53,14 @@ describe('classifyRisk', () => {
     expect(risk(call('type', { id: 1, text: 'a\nb' }), el({ tag: 'input', inForm: true })).reasons).toEqual(['Pressing Enter inside a form']);
     expect(risk(call('type', { text: 'a\tb' }), el({ tag: 'input', inForm: true })).risky).toBe(false);
   });
+  it('keeps the hard gate when a key press submits a sensitive field or activates a keyword button', () => {
+    expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', type: 'password', inForm: true })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', autocomplete: 'cc-number' })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Return' }), el({ name: 'Pay now', inForm: true })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Space' }), el({ name: 'Delete account' })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Tab' }), el({ name: 'Pay now' })).risky).toBe(false);
+    expect(risk(call('key', { combo: 'Enter' }), el({ name: 'Go', inForm: true })).hard).toBe(false);
+  });
   it('flags downloads and file uploads', () => {
     expect(risk(call('click'), el({ tag: 'a', role: 'link', name: 'Get', href: 'https://a.test/app.dmg' })).risky).toBe(true);
     expect(risk(call('click'), el({ tag: 'a', role: 'link', name: 'Get', download: true })).risky).toBe(true);
