@@ -7,7 +7,6 @@ import { estimateTokens, TOOLS_OVERHEAD_TOKENS } from './tokens';
 
 export interface ContextInput {
   profile: Profile;
-  stepLimit: number;
   turns: Turn[];
   current: ObservationRecord | null;
   /** Ratio of real prompt tokens to our estimate, from the last API `usage`. */
@@ -53,7 +52,7 @@ function observationMessage(o: ObservationRecord, full: boolean, shot: boolean):
 
 function render(input: ContextInput, plans: Map<number, StepPlan>, limits: ModeLimits, currentShot: boolean): ChatMessage[] {
   const { profile, turns } = input;
-  const out: ChatMessage[] = [{ role: 'system', content: systemPrompt(profile.contextMode, input.stepLimit, profile.supportsVision) }];
+  const out: ChatMessage[] = [{ role: 'system', content: systemPrompt(profile.contextMode, profile.supportsVision) }];
   const textAttachments = turns.reduce((n, t) => n + (t.kind === 'user' ? t.attachments.filter((a) => a.kind === 'text').length : 0), 0);
   const attChars = limits.attachmentChars(profile, textAttachments);
   let dropped = 0;

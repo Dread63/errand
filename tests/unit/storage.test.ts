@@ -78,11 +78,30 @@ describe('SettingsStore', () => {
   it('returns defaults and merges updates', async () => {
     const s = new SettingsStore(memoryKV());
     expect(await s.get()).toEqual(DEFAULT_SETTINGS);
-    expect(DEFAULT_SETTINGS.stepLimit).toBe(30);
+    expect(DEFAULT_SETTINGS.troubleLimit).toBe(8);
     expect(DEFAULT_RISKY_KEYWORDS).toContain('checkout');
-    await s.update({ stepLimit: 12 });
-    expect((await s.get()).stepLimit).toBe(12);
+    await s.update({ troubleLimit: 12 });
+    expect((await s.get()).troubleLimit).toBe(12);
     expect((await s.get()).riskyKeywords).toEqual(DEFAULT_RISKY_KEYWORDS);
+  });
+
+  it('discards legacy step limits while preserving other settings and new thresholds', async () => {
+    const kv = memoryKV();
+    const store = new SettingsStore(kv);
+    await kv.set('settings', { stepLimit: 30, debugTiming: true });
+    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true });
+    await store.update({ troubleLimit: 5 });
+    expect(await store.get()).toMatchObject({ troubleLimit: 5, debugTiming: true });
+    expect(await kv.get('settings')).not.toHaveProperty('stepLimit');
+  });
+
+  it('uses a safe default for invalid stored trouble thresholds', async () => {
+    const kv = memoryKV();
+    const store = new SettingsStore(kv);
+    for (const troubleLimit of [null, 0, -1, '8', NaN, Infinity]) {
+      await kv.set('settings', { troubleLimit });
+      expect((await store.get()).troubleLimit).toBe(8);
+    }
   });
 });
 

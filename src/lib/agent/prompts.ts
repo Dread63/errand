@@ -61,7 +61,7 @@ const VISION = `Screenshots:
 
 const FALLBACK = `If you cannot call tools natively, reply with only a JSON object like {"name": "click", "arguments": {"id": 12}}.`;
 
-export function systemPrompt(mode: ContextMode, stepLimit: number, vision = false): string {
+export function systemPrompt(mode: ContextMode, vision = false): string {
   const extra = mode === 'compact' ? COMPACT : mode === 'standard' ? STANDARD : FULL;
-  return `${CORE}\n\n${extra}${vision ? `\n\n${VISION}` : ''}\n\nYou have at most ${stepLimit} steps.\n${FALLBACK}`;
+  return `${CORE}\n\n${extra}${vision ? `\n\n${VISION}` : ''}\n\n${FALLBACK}`;
 }

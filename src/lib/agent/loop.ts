@@ -33,6 +33,15 @@ export interface AgentDeps {
 
 const MAX_THINKING = 4000;
 
+/** Canonical JSON ignores argument key order and generated tool-call ids. */
+function callSignature(call: ToolCall): string {
+  return JSON.stringify([call.name, call.args], (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]]))
+      : value,
+  );
+}
+
 interface ModelReply {
   result: ChatResult;
   thinking: string;
@@ -200,7 +209,10 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
   };
   const newId = d.newId ?? (() => crypto.randomUUID());
   const now = d.now ?? Date.now;
-  const limit = d.settings.stepLimit;
+  const limit = d.settings.troubleLimit;
+  let trouble = 0;
+  let pageSignature = '';
+  const pageCalls = new Set<string>();
   let malformed = 0;
   let calibration = 1;
   let acted = false;
@@ -208,14 +220,32 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
   let nudge: ChatMessage[] | null = null;
   let nudged = false;
 
+  const recordOutcome = async (problem?: string) => {
+    trouble = problem ? trouble + 1 : 0;
+    if (problem && (trouble >= limit || malformed > 2)) {
+      if (d.signal.aborted) throw new StopTask('Stopped.');
+      const again = await d.gate.retry(`The agent has hit ${trouble} problems in a row: ${problem.replace(/[.!?]+$/, '')}. Keep going?`);
+      if (!again) throw new StopTask(`Stopped after ${trouble} consecutive problems: ${problem}`);
+      trouble = 0;
+      malformed = 0;
+    }
+  };
+
   try {
-    for (let n = 0; n < limit; n++) {
+    for (let n = 0; ; n++) {
       if (d.signal.aborted) throw new StopTask('Stopped.');
       const stepStart = performance.now();
       const startedAt = now();
       let prev: { call: ToolCall; role?: string } | undefined;
       const observation = await timed(`step ${n + 1}: observe (total)`, () => guarded(d, () => observe(d)));
-      const messages = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
+      // Compare exactly the URL and rendered text the model sees, excluding screenshots.
+      // Retain calls only while this observation stays unchanged, including alternating loops.
+      const signature = JSON.stringify([observation.url, observation.detail, observation.tabs]);
+      if (signature !== pageSignature) {
+        pageCalls.clear();
+        pageSignature = signature;
+      }
+      const messages = buildMessages({ profile: d.profile, turns, current: observation, calibration });
       if (nudge) messages.push(...nudge);
       nudge = null;
       const reply = await timed(`step ${n + 1}: model (total, ~${estimateTokens(messages)} prompt tokens est.)`, () => callModel(d, messages, now));
@@ -230,7 +260,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
         const text = result.content.trim();
         // Mid-task, a reply without a tool call is usually narration ("Let me check…"), not the
         // answer. Ask once for a tool call; a second plain reply is taken as the final answer.
-        if (acted && !nudged && n + 1 < limit) {
+        if (acted && !nudged) {
           nudged = true;
           nudge = [
             { role: 'assistant', content: text || '(empty reply)' },
@@ -275,13 +305,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           step.label = 'Invalid tool call';
           step.result = `Error: ${e.message}`;
           push(step);
-          if (malformed > 2) {
-            const again = await d.gate.retry(
-              `The model produced ${malformed} invalid tool calls in a row. Last output: ${raw.name} ${JSON.stringify(raw.args)} ${raw.error ?? e.message}`,
-            );
-            if (!again) throw new StopTask('Stopped after repeated invalid tool calls.');
-            malformed = 0;
-          }
+          await recordOutcome(step.result);
           break;
         }
 
@@ -296,27 +320,33 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           const answer = await d.gate.ask(String(call.args.question));
           step.result = `User answered: ${answer}`;
           push(step);
+          await recordOutcome();
           break;
         }
 
+        const key = callSignature(call);
+        const repeated = pageCalls.has(key);
+        pageCalls.add(key);
         const out: { role?: string } = {};
         step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step, out)));
         acted = true;
         push(step);
         if (step.result === REJECTED) {
           // A rejection ends the task: the model explains itself and hands control back to the user.
-          const wrap = buildMessages({ profile: d.profile, stepLimit: limit, turns, current: observation, calibration });
+          const wrap = buildMessages({ profile: d.profile, turns, current: observation, calibration });
           wrap.push({ role: 'user', content: WRAP_UP });
           const end = (await callModel(d, wrap, now, [])).result;
           const done = end.toolCalls[0]?.name === 'done' ? String(end.toolCalls[0].args.summary ?? '').trim() : '';
           push({ kind: 'assistant', text: done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.' });
           return turns;
         }
+        await recordOutcome(step.result.startsWith('Error')
+          ? step.result
+          : repeated ? `No progress: repeated ${call.name} with the same arguments on an unchanged page` : undefined);
         if (step.result.startsWith('Error')) break;
         prev = { call, role: out.role };
       }
     }
-    push({ kind: 'assistant', text: `Stopped: reached the step limit of ${limit} steps.` });
   } catch (e) {
     if (e instanceof StopTask || e instanceof TaskEndedError) push({ kind: 'assistant', text: e.message });
     else if (d.signal.aborted) push({ kind: 'assistant', text: 'Stopped.' });
