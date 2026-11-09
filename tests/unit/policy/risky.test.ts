@@ -109,7 +109,44 @@ describe('classifyRisk', () => {
     expect(checked('type', { id: 1, text: 'Hi' }, field('Post title')).hard).toBe(false);
     expect(checked('type', { id: 1, text: 'a@b.c' }, field('Confirm email')).hard).toBe(false);
     expect(checked('click', { id: 1 }, field('Order number')).hard).toBe(false);
+    expect(checked('click', { id: 1 }, field('Post title')).hard).toBe(false);
+    expect(checked('click', { id: 1 }, field('Confirm email')).hard).toBe(false);
+    expect(checked('key', { combo: 'Enter' }, field('Order number')).risky).toBe(false);
+    expect(checked('key', { combo: 'Space' }, field('Post title')).risky).toBe(false);
     expect(checked('type', { id: 1, text: 'x' }, el({ tag: 'a', role: 'link', name: 'Get', download: true }))).toMatchObject({ risky: true, hard: false });
+  });
+
+  it('hard-gates a pay or buy label on any control that is not a text field', () => {
+    const checked = (name: string, args: Record<string, unknown>, element: ElementInfo) =>
+      classifyRisk(validateCall({ id: 'c', name, args }, false), target(element), DEFAULT_RISKY_KEYWORDS);
+    const control = (tag: string, role: string, name: string) =>
+      el({ tag, role, name, inForm: false, isSubmit: false });
+    const buy = control('div', 'clickable', 'Buy now');
+    const pay = control('span', 'clickable', 'Pay now');
+    const order = control('div', 'clickable', 'Place order');
+    expect(checked('click', { id: 1 }, buy)).toMatchObject({ risky: true, hard: true, reasons: ['Label contains "buy"'] });
+    expect(checked('key', { combo: 'Enter' }, buy).hard).toBe(true);
+    expect(checked('key', { combo: 'Space' }, buy).hard).toBe(true);
+    expect(checked('click', { id: 1 }, pay).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, pay).hard).toBe(true);
+    expect(checked('key', { combo: 'Space' }, pay).hard).toBe(true);
+    for (const element of [
+      control('span', 'clickable', 'Pay now'),
+      control('label', 'clickable', 'Pay now'),
+      control('td', 'clickable', 'Pay now'),
+      control('div', 'option', 'Pay now'),
+      control('div', 'tab', 'Pay now'),
+      control('div', 'checkbox', 'Pay now'),
+      control('div', 'menuitemradio', 'Pay now'),
+    ]) {
+      expect(checked('click', { id: 1 }, element).hard).toBe(true);
+      expect(checked('key', { combo: 'Enter' }, element).hard).toBe(true);
+      expect(checked('key', { combo: 'Space' }, element).hard).toBe(true);
+    }
+    expect(checked('type', { id: 1, text: 'x' }, order)).toMatchObject({ risky: true, hard: true });
+    expect(checked('type', { text: 'x', submit: true }, order).hard).toBe(true);
+    expect(checked('type', { text: 'hello' }, order).risky).toBe(false);
+    expect(checked('click', { id: 1 }, control('div', 'clickable', 'Next')).risky).toBe(false);
   });
 
   it('hard-gates keys that enter a password or card, including paste, but not navigation', () => {

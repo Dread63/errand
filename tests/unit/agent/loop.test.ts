@@ -577,6 +577,31 @@ describe('runAgent', () => {
     }
   });
 
+  it('asks before a click or Enter on a Buy now div, in every mode', async () => {
+    const buy = { tag: 'div', role: 'clickable', name: 'Buy now', inForm: false, isSubmit: false };
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      const click = setup([toolCall('click', { id: 2 }), toolCall('done', { summary: 'x' })]);
+      click.deps.approvalMode = mode;
+      click.driver.elements[2] = el(2, buy);
+      click.gate.siteAnswers = ['once'];
+      click.gate.riskyAnswers = [false];
+      await runAgent(task, click.deps);
+      expect(click.gate.riskySeen[0]?.grantable).toBe(false);
+      expect(click.gate.log).toContain('risky:Click "Buy now"');
+      expect(click.driver.performed).toEqual([]);
+
+      const enter = setup([toolCall('key', { combo: 'Enter' }), toolCall('done', { summary: 'x' })]);
+      enter.deps.approvalMode = mode;
+      enter.driver.focused = el(2, buy);
+      enter.gate.siteAnswers = ['once'];
+      enter.gate.riskyAnswers = [false];
+      await runAgent(task, enter.deps);
+      expect(enter.gate.riskySeen[0]?.grantable).toBe(false);
+      expect(enter.gate.log).toContain('risky:Press Enter');
+      expect(enter.driver.performed).toEqual([]);
+    }
+  });
+
   it('types into an ordinary Order number field without a prompt', async () => {
     const s = setup([toolCall('type', { id: 2, text: '100' }), toolCall('done', { summary: 'x' })]);
     s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', type: 'text', name: 'Order number', inForm: true, isSubmit: false });
