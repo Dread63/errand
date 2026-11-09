@@ -1,6 +1,8 @@
 export type ContextMode = 'compact' | 'standard' | 'full';
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 export type Theme = 'system' | 'light' | 'dark';
+/** Chosen in the side panel for the task being sent. A missing or invalid value is Ask. Not saved. */
+export type ApprovalMode = 'ask' | 'auto' | 'hands-off';
 
 export interface Profile {
   id: string;

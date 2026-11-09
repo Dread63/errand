@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { memoryKV } from '@/lib/storage/kv';
 import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
 import { DEFAULT_RISKY_KEYWORDS, DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
-import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
+import { SitePermissionStore } from '@/lib/storage/sites';
 import { HistoryStore } from '@/lib/storage/history';
 import type { Conversation, Profile } from '@/lib/types';
 
@@ -103,6 +103,31 @@ describe('SettingsStore', () => {
       expect((await store.get()).troubleLimit).toBe(8);
     }
   });
+
+  it('strips a saved approval mode once and then reads without writing', async () => {
+    const kv = memoryKV();
+    let writes = 0;
+    const counted = {
+      get: kv.get.bind(kv),
+      set: async (key: string, value: unknown) => {
+        writes++;
+        await kv.set(key, value);
+      },
+      remove: kv.remove.bind(kv),
+    };
+    await kv.set('settings', { approvalMode: 'auto', stepLimit: 30, debugTiming: true });
+    await kv.set('bypassOrigins', ['https://shop.test']);
+    const store = new SettingsStore(counted);
+    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true });
+    expect(await kv.get('settings')).toEqual({ debugTiming: true });
+    expect(await kv.get('bypassOrigins')).toBeUndefined();
+    expect(await kv.get('legacyApprovalMigrated')).toBe(true);
+    const afterMigration = writes;
+    await kv.set('settings', { approvalMode: 'hands-off', debugTiming: true });
+    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true });
+    expect(writes).toBe(afterMigration);
+    expect(await kv.get('settings')).toEqual({ approvalMode: 'hands-off', debugTiming: true });
+  });
 });
 
 describe('SitePermissionStore', () => {
@@ -162,13 +187,3 @@ describe('HistoryStore', () => {
   });
 });
 
-describe('BypassStore', () => {
-  it('is scoped to the site, so another site never inherits it, and unchecking removes it', async () => {
-    const s = new BypassStore(memoryKV());
-    await s.setOrigin('https://a.test', true);
-    expect(await s.applies('https://a.test')).toBe(true);
-    expect(await s.applies('https://b.test')).toBe(false);
-    await s.setOrigin('https://a.test', false);
-    expect(await s.origins()).toEqual([]);
-  });
-});

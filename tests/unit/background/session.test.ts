@@ -47,7 +47,7 @@ async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boo
     { postMessage: (m) => posted.push(m) },
     { profiles, settings, siteStore, history, makeLlm: () => llm, makeDriver: () => driver, workspace: { prepare: async (t, fresh) => (prepared.push([t, fresh]), 9) }, newId: () => `id${++n}` },
   );
-  return { session, posted, driver, history, llm, prepared };
+  return { session, posted, driver, history, llm, prepared, siteStore };
 }
 
 const start = { type: 'start' as const, conversationId: null, text: 'Click it', attachments: [], tabId: 42 };
@@ -80,6 +80,15 @@ describe('PanelSession', () => {
     await s.session.handle({ ...start, attachments: [{ name: 'a.png', kind: 'image', dataUrl: 'data:image/png;base64,AA==' }] });
     expect(s.posted[0]).toMatchObject({ type: 'error', message: expect.stringMatching(/does not support images/) });
   });
+  it('hands-off allows the page for this task only and still saves a one-line summary', async () => {
+    const s = await setup([toolCall('done', { summary: 'Opened the page.\nFound the price.' })]);
+    await s.session.handle({ ...start, approvalMode: 'hands-off' });
+    expect(s.posted.some((m) => m.type === 'gate')).toBe(false);
+    expect(await s.siteStore.isAllowed('https://shop.test')).toBe(false);
+    const conv = await s.history.get((await s.history.list())[0].id);
+    expect(conv?.turns.at(-1)).toEqual({ kind: 'assistant', text: 'Opened the page.' });
+  });
+
   it('runs a task end to end, streams state and saves history', async () => {
     const s = await setup([toolCall('click', { id: 1 }), toolCall('done', { summary: 'Clicked.' })], { allow: true });
     await s.session.handle(start);

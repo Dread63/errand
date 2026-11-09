@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { runAgent } from '@/lib/agent/loop';
-import { BypassStore } from '@/lib/storage/sites';
-import { memoryKV } from '@/lib/storage/kv';
 import { DetachedError, LlmError, TaskEndedError, ToolError } from '@/lib/errors';
+import { SitePolicy } from '@/lib/policy/sites';
+import { memoryKV } from '@/lib/storage/kv';
+import { SettingsStore } from '@/lib/storage/settings';
 import type { StepTurn } from '@/lib/types';
 import { el, last, setup, task, textReply, toolCall } from './fakes';
 
@@ -177,17 +178,318 @@ describe('runAgent', () => {
     expect(s.driver.performed.map((c) => c.args.id)).toEqual([2]);
   });
 
-  it('bypass skips routine risky prompts but not sensitive or keyword ones', async () => {
-    const s = setup([toolCall('click', { id: 2 }), toolCall('click', { id: 4 }), toolCall('type', { id: 3, text: 'pw' }), toolCall('done', { summary: 'x' })]);
-    s.deps.bypass = new BypassStore(memoryKV());
-    await s.deps.bypass.setOrigin('https://shop.test', true);
+  it('ask prompts for a download, a form submit, a payment label, and a password', async () => {
+    const s = setup([
+      toolCall('click', { id: 8 }),
+      toolCall('click', { id: 2 }),
+      toolCall('click', { id: 4 }),
+      toolCall('type', { id: 3, text: 'pw' }),
+      toolCall('done', { summary: 'x' }),
+    ]);
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
     s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
     s.driver.elements[4] = el(4, { name: 'Place order' });
     s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
-    s.gate.riskyAnswers = [true, true];
+    s.gate.riskyAnswers = [true, true, true, true];
     await runAgent(task, s.deps);
-    expect(s.gate.riskyAnswers).toEqual([]);
-    expect(s.driver.performed.map((c) => c.args.id)).toEqual([2, 4, 3]);
+    expect(s.gate.riskySeen.map((r) => r.grantable)).toEqual([true, false, false, false]);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([8, 2, 4, 3]);
+  });
+
+  it('auto skips a download but still asks for the site, a form submit, a payment, and a password', async () => {
+    const s = setup([
+      toolCall('click', { id: 8 }),
+      toolCall('click', { id: 2 }),
+      toolCall('click', { id: 4 }),
+      toolCall('type', { id: 3, text: 'pw' }),
+      toolCall('done', { summary: 'x' }),
+    ]);
+    s.deps.approvalMode = 'auto';
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
+    s.driver.elements[4] = el(4, { name: 'Pay now' });
+    s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
+    s.gate.siteAnswers = ['once'];
+    s.gate.riskyAnswers = [true, true, true];
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('site:'))).toEqual(['site:https://shop.test']);
+    expect(s.gate.log.filter((l) => l.startsWith('risky:'))).toEqual([
+      'risky:Click the "Go" button',
+      'risky:Click the "Pay now" button',
+      'risky:Type "••••••" into the "Password" text box',
+    ]);
+    expect(s.gate.riskySeen.every((r) => !r.grantable)).toBe(true);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([8, 2, 4, 3]);
+    expect(await s.siteStore.list()).toEqual([]);
+  });
+
+  it.each([
+    {
+      path: 'clicking a submit button',
+      action: () => toolCall('click', { id: 2 }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
+      },
+      prompt: 'risky:Click the "Go" button',
+    },
+    {
+      path: 'pressing Enter in an address field',
+      action: () => toolCall('key', { combo: 'Enter' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(9, { tag: 'input', role: 'textbox', name: 'Address', inForm: true });
+      },
+      prompt: 'risky:Press Enter',
+    },
+    {
+      path: 'typing into an address field and submitting',
+      action: () => toolCall('type', { id: 2, text: '1 Main', submit: true }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', name: 'Address', inForm: true });
+      },
+      prompt: 'risky:Type "1 Main" into the "Address" text box and press Enter',
+    },
+    {
+      path: 'typing a newline into an address field',
+      action: () => toolCall('type', { id: 2, text: '1 Main\n' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', name: 'Address', inForm: true });
+      },
+      prompt: 'risky:Type "1 Main⏎" into the "Address" text box',
+    },
+    {
+      path: 'pressing Enter on a Place order button',
+      action: () => toolCall('key', { combo: 'Enter' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { isSubmit: true, name: 'Place order' });
+      },
+      prompt: 'risky:Press Enter',
+    },
+    {
+      path: 'pressing Space on a submit button',
+      action: () => toolCall('key', { combo: 'Space' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { isSubmit: true, name: 'Go' });
+      },
+      prompt: 'risky:Press Space',
+    },
+  ])('$path always asks in Auto and Hands-off', async ({ action, arm, prompt }) => {
+    for (const mode of ['auto', 'hands-off'] as const) {
+      const s = setup([action(), toolCall('done', { summary: 'x' })]);
+      s.deps.approvalMode = mode;
+      arm(s);
+      s.gate.siteAnswers = ['once'];
+      s.gate.riskyAnswers = [false];
+      await runAgent(task, s.deps);
+      expect(s.gate.riskySeen[0]?.grantable).toBe(false);
+      expect(s.gate.log).toContain(prompt);
+      expect(s.driver.performed).toEqual([]);
+    }
+  });
+
+  it.each([
+    {
+      path: 'a click on submit',
+      action: () => toolCall('click', { id: 2 }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
+      },
+      prompt: 'risky:Click the "Go" button',
+    },
+    {
+      path: 'Enter in an address field',
+      action: () => toolCall('key', { combo: 'Enter' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(9, { tag: 'input', role: 'textbox', name: 'Address', inForm: true });
+      },
+      prompt: 'risky:Press Enter',
+    },
+    {
+      path: 'typing and submitting an address',
+      action: () => toolCall('type', { id: 2, text: '1 Main', submit: true }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', name: 'Address', inForm: true });
+      },
+      prompt: 'risky:Type "1 Main" into the "Address" text box and press Enter',
+    },
+    {
+      path: 'a newline in an address field',
+      action: () => toolCall('type', { id: 2, text: '1 Main\n' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', name: 'Address', inForm: true });
+      },
+      prompt: 'risky:Type "1 Main⏎" into the "Address" text box',
+    },
+    {
+      path: 'Enter on Place order',
+      action: () => toolCall('key', { combo: 'Enter' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { isSubmit: true, name: 'Place order' });
+      },
+      prompt: 'risky:Press Enter',
+    },
+    {
+      path: 'Space on a submit button',
+      action: () => toolCall('key', { combo: 'Space' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { isSubmit: true, name: 'Go' });
+      },
+      prompt: 'risky:Press Space',
+    },
+  ])('$path still asks after Allow for the rest of this task', async ({ action, arm, prompt }) => {
+    const s = setup([toolCall('click', { id: 8 }), action(), toolCall('done', { summary: 'x' })]);
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    arm(s);
+    s.gate.siteAnswers = ['once'];
+    s.gate.riskyAnswers = ['task', false];
+    await runAgent(task, s.deps);
+    expect(s.gate.riskySeen.map((r) => r.grantable)).toEqual([true, false]);
+    expect(s.gate.log).toContain(prompt);
+    expect(s.driver.performed.map((c) => c.name)).toEqual(['click']);
+  });
+
+  it('hands-off opens a new site for this task only and still asks for a card field', async () => {
+    const s = setup([
+      toolCall('type', { id: 3, text: '4111' }),
+      toolCall('done', { summary: 'Opened the page.\nThe price is $5.' }),
+    ]);
+    s.deps.approvalMode = 'hands-off';
+    s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', autocomplete: 'cc-number', name: 'Card' });
+    s.gate.riskyAnswers = [true];
+    const turns = await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('site:'))).toEqual([]);
+    expect(s.gate.riskySeen[0].grantable).toBe(false);
+    expect(await s.siteStore.isAllowed('https://shop.test')).toBe(false);
+    expect(last(turns)).toEqual({ kind: 'assistant', text: 'Opened the page.' });
+
+    const again = setup([toolCall('done', { summary: 'Asked.' })]);
+    again.deps.sites = new SitePolicy(s.siteStore);
+    again.gate.siteAnswers = ['deny'];
+    await runAgent(task, again.deps);
+    expect(again.gate.log).toContain('site:https://shop.test');
+  });
+
+  it('an invalid approval mode asks before a routine download', async () => {
+    const s = setup([toolCall('click', { id: 8 }), toolCall('done', { summary: 'x' })]);
+    s.deps.approvalMode = 'bypass' as 'ask';
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    s.gate.riskyAnswers = [true];
+    await runAgent(task, s.deps);
+    expect(s.gate.log).toContain('risky:Click the "Get" link');
+  });
+
+  it('a saved auto-approve site list does not skip prompts and is deleted', async () => {
+    const kv = memoryKV();
+    await kv.set('bypassOrigins', ['https://shop.test']);
+    const settings = await new SettingsStore(kv).get();
+    const s = setup([toolCall('click', { id: 8 }), toolCall('done', { summary: 'x' })]);
+    s.deps.settings = { ...settings, troubleLimit: 10 };
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    s.gate.riskyAnswers = [true];
+    await runAgent(task, s.deps);
+    expect(s.gate.log).toContain('risky:Click the "Get" link');
+    expect(await kv.get('bypassOrigins')).toBeUndefined();
+  });
+
+  it('allow for the rest of this task skips later downloads, not a form submit, and the next task asks again', async () => {
+    const s = setup([
+      toolCall('click', { id: 8 }),
+      toolCall('click', { id: 5 }),
+      toolCall('click', { id: 2 }),
+      toolCall('type', { id: 3, text: '4111' }),
+      toolCall('type', { id: 6, text: 'secret' }),
+      toolCall('done', { summary: 'done' }),
+    ]);
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    s.driver.elements[5] = el(5, { tag: 'a', role: 'link', name: 'Save', download: true });
+    s.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
+    s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', autocomplete: 'cc-number', name: 'Card' });
+    s.driver.elements[6] = el(6, { tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
+    s.gate.siteAnswers = ['once'];
+    s.gate.riskyAnswers = ['task', true, true, true];
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('risky:'))).toEqual([
+      'risky:Click the "Get" link',
+      'risky:Click the "Go" button',
+      'risky:Type "••••••" into the "Card" text box',
+      'risky:Type "••••••" into the "Password" text box',
+    ]);
+    expect(s.gate.riskySeen.map((r) => r.grantable)).toEqual([true, false, false, false]);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([8, 5, 2, 3, 6]);
+    expect(await s.siteStore.list()).toEqual([]);
+
+    const next = setup([toolCall('click', { id: 8 }), toolCall('done', { summary: 'x' })]);
+    next.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    next.gate.siteAnswers = ['once'];
+    next.gate.riskyAnswers = [false];
+    await runAgent(task, next.deps);
+    expect(next.gate.log).toContain('risky:Click the "Get" link');
+    expect(next.driver.performed).toEqual([]);
+  });
+
+  it('a task answer on a password does not grant the submit or a later download', async () => {
+    const s = setup([
+      toolCall('type', { id: 3, text: 'secret' }),
+      toolCall('click', { id: 8 }),
+      toolCall('click', { id: 2 }),
+      toolCall('done', { summary: 'x' }),
+    ]);
+    s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    s.driver.elements[2] = el(2, { isSubmit: true, name: 'Continue' });
+    s.gate.siteAnswers = ['once'];
+    s.gate.riskyAnswers = ['task', true, true];
+    await runAgent(task, s.deps);
+    expect(s.gate.riskySeen.map((r) => r.grantable)).toEqual([false, true, false]);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([3, 8, 2]);
+  });
+
+  it('cancelling the task drops the task grant', async () => {
+    const s = setup([toolCall('click', { id: 8 }), toolCall('click', { id: 5 })]);
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    s.driver.elements[5] = el(5, { tag: 'a', role: 'link', name: 'Save', download: true });
+    s.gate.siteAnswers = ['once'];
+    s.gate.riskyAnswers = ['task'];
+    const perform = s.driver.perform.bind(s.driver);
+    s.driver.perform = async (call) => {
+      const result = await perform(call);
+      s.ctrl.abort();
+      return result;
+    };
+    expect(last(await runAgent(task, s.deps))).toEqual({ kind: 'assistant', text: 'Stopped.' });
+    expect(s.driver.performed).toHaveLength(1);
+
+    const next = setup([toolCall('click', { id: 8 }), toolCall('done', { summary: 'x' })]);
+    next.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    next.gate.siteAnswers = ['once'];
+    next.gate.riskyAnswers = [false];
+    await runAgent(task, next.deps);
+    expect(next.gate.log).toContain('risky:Click the "Get" link');
+    expect(next.driver.performed).toEqual([]);
+  });
+
+  it('hands-off ends every task with one sentence, including a rejection or an error', async () => {
+    const handsOff = setup([toolCall('done', { summary: ' \n ' })]);
+    handsOff.deps.approvalMode = 'hands-off';
+    expect(last(await runAgent(task, handsOff.deps))).toEqual({ kind: 'assistant', text: 'Task complete.' });
+
+    const rejected = setup([
+      toolCall('click', { id: 2 }),
+      textReply('I could not submit.\nTry another way.'),
+    ]);
+    rejected.deps.approvalMode = 'hands-off';
+    rejected.driver.elements[2] = el(2, { isSubmit: true, name: 'Go' });
+    rejected.gate.riskyAnswers = [false];
+    expect(last(await runAgent(task, rejected.deps))).toEqual({ kind: 'assistant', text: 'I could not submit.' });
+
+    const failed = setup([]);
+    failed.deps.approvalMode = 'hands-off';
+    failed.gate.siteAnswers = ['once'];
+    failed.driver.observeErrors = [new Error('The tab closed.\nReload it.')];
+    expect(last(await runAgent(task, failed.deps))).toEqual({ kind: 'assistant', text: 'Error: The tab closed.' });
+
+    const ask = setup([toolCall('done', { summary: 'Opened the page.\nThe price is $5.' })]);
+    ask.gate.siteAnswers = ['once'];
+    expect(last(await runAgent(task, ask.deps))).toEqual({ kind: 'assistant', text: 'Opened the page.\nThe price is $5.' });
   });
 
   it('masks typed passwords in the saved step', async () => {

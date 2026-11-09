@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { chromeKV } from '@/lib/storage/kv';
 import { selectModel } from '@/lib/storage/models';
 import { ProfileStore } from '@/lib/storage/profiles';
 import { SettingsStore } from '@/lib/storage/settings';
-import type { Attachment } from '@/lib/types';
+import type { ApprovalMode, Attachment } from '@/lib/types';
 import { IconX } from '@/lib/ui/icons';
 import { canSend, supportsVisionFor } from '@/lib/ui/models';
 import { targetTabId } from '@/lib/ui/targetTab';
@@ -26,6 +26,8 @@ export function App() {
   const { catalog, refreshAll, refreshOne, refreshing } = useModelCatalog(profiles);
   const stores = useMemo(() => ({ profiles: new ProfileStore(chromeKV()), settings: new SettingsStore(chromeKV()) }), []);
   const [view, setView] = useState<'chat' | 'history'>('chat');
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('ask');
+  const wasRunning = useRef(false);
 
   const firstUser = state.turns.find((t) => t.kind === 'user');
   const title = firstUser && firstUser.kind === 'user' ? firstUser.text : 'New chat';
@@ -35,7 +37,13 @@ export function App() {
     void targetTabId().then((tabId) => tabId !== undefined && send({ type: 'prepare', tabId, fresh: false }));
   }, [send]);
 
+  useEffect(() => {
+    if (wasRunning.current && !state.running) setApprovalMode('ask');
+    wasRunning.current = state.running;
+  }, [state.running]);
+
   async function newChat() {
+    setApprovalMode('ask');
     dispatch({ type: 'new_chat' });
     setView('chat');
     const tabId = await targetTabId();
@@ -48,7 +56,7 @@ export function App() {
       dispatch({ type: 'error', message: 'There is no tab for the agent to control.' });
       return;
     }
-    send({ type: 'start', conversationId: state.conversationId, text, attachments, tabId });
+    send({ type: 'start', conversationId: state.conversationId, text, attachments, tabId, approvalMode });
   }
 
   return (
@@ -90,6 +98,8 @@ export function App() {
             running={state.running}
             ready={canSend(active)}
             vision={active ? supportsVisionFor(active, active.model) : false}
+            approvalMode={approvalMode}
+            onApprovalMode={setApprovalMode}
             modelMenu={
               <ModelMenu
                 profiles={profiles}

@@ -1,10 +1,10 @@
 import { DetachedError, TaskEndedError, ToolError } from '../errors';
 import type { LlmClient } from '../llm/client';
 import type { ChatMessage, ChatResult } from '../llm/types';
+import { resolveApprovalMode, skipsRoutineRisk, skipsSitePrompt, taskSummary } from '../policy/approval';
 import { classifyRisk, isSensitiveField } from '../policy/risky';
 import type { SitePolicy } from '../policy/sites';
-import type { BypassStore } from '../storage/sites';
-import type { ActionTarget, ObservationRecord, Profile, Settings, StepTurn, ToolCall, Turn } from '../types';
+import type { ActionTarget, ApprovalMode, ObservationRecord, Profile, Settings, StepTurn, ToolCall, Turn } from '../types';
 import { logTiming, timed } from '../timing';
 import { originOf } from '../url';
 import { errMsg } from '../util';
@@ -19,9 +19,10 @@ export interface AgentDeps {
   driver: BrowserDriver;
   gate: UserGate;
   sites: SitePolicy;
-  bypass?: BypassStore;
   profile: Profile;
   settings: Settings;
+  /** Chosen for this run only. Missing or invalid values are Ask. */
+  approvalMode?: ApprovalMode;
   hooks: AgentHooks;
   signal: AbortSignal;
   newId?: () => string;
@@ -72,6 +73,10 @@ async function ensureSite(d: AgentDeps, origin: string): Promise<boolean> {
   const status = await d.sites.check(origin);
   if (status === 'allowed') return true;
   if (status === 'denied') return false;
+  if (skipsSitePrompt(resolveApprovalMode(d.approvalMode))) {
+    await d.sites.apply(origin, 'once');
+    return true;
+  }
   const decision = await d.gate.site(origin);
   await d.sites.apply(origin, decision);
   return decision !== 'deny';
@@ -160,7 +165,7 @@ async function callModel(d: AgentDeps, messages: ChatMessage[], now: () => numbe
   }
 }
 
-async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: string }): Promise<string> {
+async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: string }, grant: { current: boolean }): Promise<string> {
   let target: ActionTarget;
   try {
     target = await d.driver.target(call);
@@ -174,17 +179,19 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: s
   const risk = classifyRisk(call, target, d.settings.riskyKeywords);
   if (risk.risky) {
     step.risky = true;
-    // Bypass skips the prompt for ordinary risky actions; credentials, payment and checkout labels still ask.
-    const skip = !risk.hard && !!d.bypass && (await d.bypass.applies(target.origin));
-    if (!skip) {
+    const mode = resolveApprovalMode(d.approvalMode);
+    if (!skipsRoutineRisk(mode, grant.current, risk.hard)) {
       await d.driver.highlight(target).catch(() => {});
-      const ok = await d.gate.risky({
+      const decision = await d.gate.risky({
         description: step.label,
         reasons: risk.reasons,
         reason: typeof call.args.reason === 'string' ? call.args.reason : step.reasoning,
+        grantable: !risk.hard,
       });
       await d.driver.highlight(null).catch(() => {});
-      if (!ok) return REJECTED;
+      if (decision === 'reject') return REJECTED;
+      // Only a routine prompt can grant the rest of the task. A hard prompt never does.
+      if (decision === 'task' && !risk.hard) grant.current = true;
     }
   }
   let result: string;
@@ -210,6 +217,10 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
   const newId = d.newId ?? (() => crypto.randomUUID());
   const now = d.now ?? Date.now;
   const limit = d.settings.troubleLimit;
+  const mode = resolveApprovalMode(d.approvalMode);
+  const finish = (text: string) => push({ kind: 'assistant', text: taskSummary(mode, text) });
+  /** Set only by "Allow for the rest of this task". Dies with this run. */
+  const grant = { current: false };
   let trouble = 0;
   /** "page state + call" pairs already tried; a repeat means no progress, including A→B→A oscillation. */
   const tried = new Set<string>();
@@ -261,7 +272,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           ];
           continue;
         }
-        push({ kind: 'assistant', text: text || '(The model returned an empty reply.)' });
+        finish(text || '(The model returned an empty reply.)');
         return turns;
       }
       nudged = false;
@@ -304,7 +315,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           step.label = 'Finished';
           step.result = 'Task complete.';
           push(step);
-          push({ kind: 'assistant', text: String(call.args.summary) });
+          finish(String(call.args.summary));
           return turns;
         }
         if (call.name === 'ask_user') {
@@ -321,7 +332,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
         if (tried.size > 500) tried.clear();
         tried.add(key);
         const out: { role?: string } = {};
-        step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step, out)));
+        step.result = await timed(`step ${n + 1}: act ${call.name}`, () => guarded(d, () => act(d, call, step, out, grant)));
         acted = true;
         push(step);
         if (step.result === REJECTED) {
@@ -330,7 +341,7 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
           wrap.push({ role: 'user', content: WRAP_UP });
           const end = (await callModel(d, wrap, now, [])).result;
           const done = end.toolCalls[0]?.name === 'done' ? String(end.toolCalls[0].args.summary ?? '').trim() : '';
-          push({ kind: 'assistant', text: done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.' });
+          finish(done || end.content.trim() || 'Stopped: you rejected that action. Tell me how you would like to proceed.');
           return turns;
         }
         const noProgress = !step.result.startsWith('Error') && repeated;
@@ -344,9 +355,9 @@ export async function runAgent(initial: Turn[], d: AgentDeps): Promise<Turn[]> {
       }
     }
   } catch (e) {
-    if (e instanceof StopTask || e instanceof TaskEndedError) push({ kind: 'assistant', text: e.message });
-    else if (d.signal.aborted) push({ kind: 'assistant', text: 'Stopped.' });
-    else push({ kind: 'assistant', text: `Error: ${errMsg(e)}` });
+    if (e instanceof StopTask || e instanceof TaskEndedError) finish(e.message);
+    else if (d.signal.aborted) finish('Stopped.');
+    else finish(`Error: ${errMsg(e)}`);
   }
   return turns;
 }

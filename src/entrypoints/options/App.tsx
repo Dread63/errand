@@ -4,13 +4,12 @@ import { chromeKV } from '@/lib/storage/kv';
 import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles';
 import { DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
 import { ModelCatalog } from '@/lib/storage/models';
-import { BypassStore, SitePermissionStore } from '@/lib/storage/sites';
+import { SitePermissionStore } from '@/lib/storage/sites';
 import type { ContextMode, Profile, Theme } from '@/lib/types';
 import { supportsVisionFor, visionChoices } from '@/lib/ui/models';
 import { Logo } from '@/lib/ui/icons';
 import { PROVIDER_PRESETS, type ProviderPreset, profileFromPreset } from '@/lib/ui/presets';
 import { parseKeywords, validateProfile } from '@/lib/ui/profileForm';
-import { originOf } from '@/lib/url';
 import { useTheme } from '@/lib/ui/useTheme';
 
 export function App() {
@@ -26,7 +25,6 @@ export function App() {
       </header>
       <ProfilesSection />
       <SitesSection />
-      <BypassSection />
       <GeneralSection />
     </main>
   );
@@ -253,52 +251,6 @@ function SitesSection() {
   );
 }
 
-function BypassSection() {
-  const store = useMemo(() => new BypassStore(chromeKV()), []);
-  const [origins, setOrigins] = useState<string[]>([]);
-  const [input, setInput] = useState('');
-  const [error, setError] = useState('');
-  const refresh = useCallback(async () => setOrigins(await store.origins()), [store]);
-  useEffect(() => {
-    void refresh();
-    const onChanged = () => void refresh();
-    chrome.storage.onChanged.addListener(onChanged);
-    return () => chrome.storage.onChanged.removeListener(onChanged);
-  }, [refresh]);
-
-  async function add() {
-    const origin = originOf(/^[a-z]+:\/\//i.test(input.trim()) ? input.trim() : `https://${input.trim()}`);
-    if (!origin || !/^https?:/.test(origin)) return setError('Enter a site address like www.walmart.com');
-    setError('');
-    setInput('');
-    await store.setOrigin(origin, true);
-    await refresh();
-  }
-
-  return (
-    <section>
-      <h2>Auto-approve sites</h2>
-      <p className="muted">
-        Skip approval for routine risky actions (pressing Enter in a form, submit buttons, downloads) on these sites. Passwords, payment fields and
-        buttons matching your risky keywords always ask.
-      </p>
-      <ul className="rows">
-        {origins.map((o) => (
-          <li key={o}>
-            <span>{o}</span>
-            <button className="btn ghost danger" onClick={() => void store.setOrigin(o, false).then(refresh)}>Remove</button>
-          </li>
-        ))}
-      </ul>
-      <div className="row-actions">
-        <input value={input} placeholder="www.walmart.com" onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void add()} />
-        <button className="btn" onClick={() => void add()}>Add</button>
-      </div>
-      {error && <p className="muted">{error}</p>}
-    </section>
-  );
-}
-
 function GeneralSection() {
   const store = useMemo(() => new SettingsStore(chromeKV()), []);
   const [troubleLimit, setTroubleLimit] = useState(DEFAULT_SETTINGS.troubleLimit);
@@ -325,6 +277,9 @@ function GeneralSection() {
   return (
     <section>
       <h2>General</h2>
+      <p className="muted">
+        Each task starts in Ask. Choose Auto or Hands-off in the side panel before you send; that choice is not saved and cannot be changed while the task is running. Passwords, payments, and submitting a form always ask.
+      </p>
       <div className="field">
         <span>Theme</span>
         <div className="seg" role="radiogroup" aria-label="Theme">

@@ -1,5 +1,5 @@
 import type { AgentDeps } from '@/lib/agent/loop';
-import type { BrowserDriver, RiskyRequest, UserGate } from '@/lib/agent/ports';
+import type { BrowserDriver, RiskyDecision, RiskyRequest, UserGate } from '@/lib/agent/ports';
 import { ToolError } from '@/lib/errors';
 import type { ChatRequest, LlmClient } from '@/lib/llm/client';
 import type { ChatResult } from '@/lib/llm/types';
@@ -49,6 +49,8 @@ export function el(id: number, over: Partial<ElementInfo> = {}): ElementInfo {
 export class FakeDriver implements BrowserDriver {
   url = 'https://shop.test/';
   elements: Record<number, ElementInfo> = { 1: el(1) };
+  /** Used for key and type calls that do not name an element, matching Chrome's focused element. */
+  focused?: ElementInfo;
   performed: ToolCall[] = [];
   highlights: Array<ActionTarget | null> = [];
   reattached = 0;
@@ -87,6 +89,9 @@ export class FakeDriver implements BrowserDriver {
       if (!e) throw new ToolError(`Element [${c.args.id}] no longer exists on the page.`);
       return { tabId: 1, origin: originOf(this.url), element: e, point: { x: 5, y: 5 } };
     }
+    if ((c.name === 'key' || c.name === 'type') && this.focused) {
+      return { tabId: 1, origin: originOf(this.url), element: this.focused };
+    }
     return { tabId: 1, origin: originOf(this.url) };
   }
   async perform(c: ToolCall): Promise<string> {
@@ -106,17 +111,21 @@ export class FakeDriver implements BrowserDriver {
 
 export class FakeGate implements UserGate {
   siteAnswers: Array<'once' | 'always' | 'deny'> = [];
-  riskyAnswers: boolean[] = [];
+  riskyAnswers: Array<boolean | 'task'> = [];
   askAnswers: string[] = [];
   retryAnswers: boolean[] = [];
   log: string[] = [];
+  riskySeen: RiskyRequest[] = [];
   async site(origin: string) {
     this.log.push(`site:${origin}`);
     return this.siteAnswers.shift() ?? 'once';
   }
-  async risky(r: RiskyRequest) {
+  async risky(r: RiskyRequest): Promise<RiskyDecision> {
+    this.riskySeen.push(r);
     this.log.push(`risky:${r.description}`);
-    return this.riskyAnswers.shift() ?? false;
+    const answer = this.riskyAnswers.shift() ?? false;
+    if (answer === 'task') return 'task';
+    return answer ? 'approve' : 'reject';
   }
   async ask(q: string) {
     this.log.push(`ask:${q}`);

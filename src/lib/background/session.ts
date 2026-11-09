@@ -1,12 +1,13 @@
 import { runAgent } from '../agent/loop';
-import type { BrowserDriver, RiskyRequest, UserGate } from '../agent/ports';
+import { resolveApprovalMode, taskSummary } from '../policy/approval';
+import type { BrowserDriver, RiskyDecision, RiskyRequest, UserGate } from '../agent/ports';
 import type { LlmClient } from '../llm/client';
 import type { BgToPanel, GateRequest, PanelToBg } from '../messages';
 import { type SiteDecision, SitePolicy } from '../policy/sites';
 import type { HistoryStore } from '../storage/history';
 import type { ProfileStore } from '../storage/profiles';
 import type { SettingsStore } from '../storage/settings';
-import type { BypassStore, SitePermissionStore } from '../storage/sites';
+import type { SitePermissionStore } from '../storage/sites';
 import type { Conversation, Profile } from '../types';
 import { setTimingEnabled, timed } from '../timing';
 import { activeProfile, supportsVisionFor } from '../ui/models';
@@ -27,7 +28,6 @@ export interface SessionDeps {
   profiles: ProfileStore;
   settings: SettingsStore;
   siteStore: SitePermissionStore;
-  bypass?: BypassStore;
   history: HistoryStore;
   makeLlm(profile: Profile): LlmClient;
   makeDriver(): DriverHandle;
@@ -76,8 +76,11 @@ export class PortGate implements UserGate {
     return v === 'once' || v === 'always' ? v : 'deny';
   }
 
-  async risky(req: RiskyRequest): Promise<boolean> {
-    return (await this.request({ kind: 'risky', ...req })) === true;
+  async risky(req: RiskyRequest): Promise<RiskyDecision> {
+    const value = await this.request({ kind: 'risky', ...req });
+    if (value === true || value === 'approve') return 'approve';
+    if (value === 'task') return 'task';
+    return 'reject';
   }
 
   async ask(question: string): Promise<string> {
@@ -197,9 +200,9 @@ export class PanelSession {
         driver,
         gate,
         sites: new SitePolicy(this.deps.siteStore),
-        bypass: this.deps.bypass,
         profile,
         settings,
+        approvalMode: resolveApprovalMode(msg.approvalMode),
         signal: abort.signal,
         newId: this.newId,
         sessionId: conv.id,
@@ -213,7 +216,7 @@ export class PanelSession {
         },
       });
     } catch (e) {
-      conv.turns = [...conv.turns, { kind: 'assistant', text: `Error: ${errMsg(e)}` }];
+      conv.turns = [...conv.turns, { kind: 'assistant', text: taskSummary(resolveApprovalMode(msg.approvalMode), `Error: ${errMsg(e)}`) }];
     } finally {
       await driver.stop().catch(() => {});
       conv.updatedAt = Date.now();

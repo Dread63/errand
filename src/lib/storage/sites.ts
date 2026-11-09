@@ -24,22 +24,3 @@ export class SitePermissionStore {
   }
 }
 
-/** Sites where routine risky actions skip the approval prompt. Saved per site, never per tab. */
-export class BypassStore {
-  constructor(private kv: KV) {}
-
-  async origins(): Promise<string[]> {
-    return [...((await this.kv.get<string[]>('bypassOrigins')) ?? [])].sort();
-  }
-
-  async setOrigin(origin: string, on: boolean): Promise<void> {
-    const all = new Set(await this.origins());
-    if (on) all.add(origin);
-    else all.delete(origin);
-    await this.kv.set('bypassOrigins', [...all]);
-  }
-
-  async applies(origin: string): Promise<boolean> {
-    return (await this.origins()).includes(origin);
-  }
-}

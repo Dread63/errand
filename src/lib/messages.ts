@@ -1,13 +1,13 @@
-import type { Attachment, Turn } from './types';
+import type { ApprovalMode, Attachment, Turn } from './types';
 
 export type GateRequest =
   | { kind: 'site'; origin: string }
-  | { kind: 'risky'; description: string; reasons: string[]; reason: string }
+  | { kind: 'risky'; description: string; reasons: string[]; reason: string; grantable: boolean }
   | { kind: 'ask'; question: string }
   | { kind: 'retry'; message: string };
 
 export type PanelToBg =
-  | { type: 'start'; conversationId: string | null; text: string; attachments: Attachment[]; tabId: number }
+  | { type: 'start'; conversationId: string | null; text: string; attachments: Attachment[]; tabId: number; approvalMode?: ApprovalMode }
   /** Creates the agent's tab group around this tab ahead of any prompt; `fresh` forces a new one (new chat). */
   | { type: 'prepare'; tabId: number; fresh: boolean }
   | { type: 'stop' }
