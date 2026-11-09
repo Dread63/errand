@@ -27,10 +27,10 @@ export function GateCard({ gate, onAnswer }: { gate: PendingGate; onAnswer: (val
           {r.reason && <p className="gate-why">Model's reason: {r.reason}</p>}
           <div className="gate-actions">
             <button className="btn primary" onClick={() => onAnswer(true)}>Approve</button>
-            <button className="btn" onClick={() => onAnswer('task')}>Allow for the rest of this task</button>
+            {r.grantable && <button className="btn" onClick={() => onAnswer('task')}>Allow for the rest of this task</button>}
             <button className="btn" onClick={() => onAnswer(false)}>Reject</button>
           </div>
-          <p className="gate-why">Allowing the rest of this task is not saved. Passwords and payments still ask.</p>
+          {r.grantable && <p className="gate-why">This lasts until the task ends and is not saved. Passwords, payments, and form submits still ask.</p>}
         </div>
       );
     case 'ask':

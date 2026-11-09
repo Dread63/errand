@@ -8,7 +8,7 @@ import { SettingsStore } from '@/lib/storage/settings';
 import { SitePermissionStore } from '@/lib/storage/sites';
 import { FakeDriver, FakeLlm, testProfile, toolCall } from '../agent/fakes';
 import type { ChatResult } from '@/lib/llm/types';
-import type { ApprovalMode, Profile } from '@/lib/types';
+import type { Profile } from '@/lib/types';
 
 class FakeHandle extends FakeDriver implements DriverHandle {
   started: number | null = null;
@@ -29,14 +29,14 @@ async function until(fn: () => boolean, timeoutMs = 1000) {
   }
 }
 
-async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boolean; noProfile?: boolean; profile?: Partial<Profile>; approvalMode?: ApprovalMode } = {}) {
+async function setup(script: ChatResult[], opts: { allow?: boolean; vision?: boolean; noProfile?: boolean; profile?: Partial<Profile> } = {}) {
   const kv = memoryKV();
   const profiles = new ProfileStore(kv);
   const settings = new SettingsStore(kv);
   const siteStore = new SitePermissionStore(kv);
   const history = new HistoryStore(kv);
   if (!opts.noProfile) await profiles.save({ ...testProfile, supportsVision: !!opts.vision, ...opts.profile });
-  await settings.update({ activeProfileId: opts.noProfile ? null : testProfile.id, ...(opts.approvalMode ? { approvalMode: opts.approvalMode } : {}) });
+  await settings.update({ activeProfileId: opts.noProfile ? null : testProfile.id });
   if (opts.allow) await siteStore.allow('https://shop.test');
   const posted: BgToPanel[] = [];
   const prepared: Array<[number, boolean]> = [];
@@ -81,12 +81,12 @@ describe('PanelSession', () => {
     expect(s.posted[0]).toMatchObject({ type: 'error', message: expect.stringMatching(/does not support images/) });
   });
   it('hands-off allows the page for this task only and still saves a one-line summary', async () => {
-    const s = await setup([toolCall('done', { summary: 'Opened the page.\nFound the price.' })], { approvalMode: 'hands-off' });
-    await s.session.handle(start);
+    const s = await setup([toolCall('done', { summary: 'Opened the page.\nFound the price.' })]);
+    await s.session.handle({ ...start, approvalMode: 'hands-off' });
     expect(s.posted.some((m) => m.type === 'gate')).toBe(false);
     expect(await s.siteStore.isAllowed('https://shop.test')).toBe(false);
     const conv = await s.history.get((await s.history.list())[0].id);
-    expect(conv?.turns.at(-1)).toEqual({ kind: 'assistant', text: 'Opened the page. Found the price.' });
+    expect(conv?.turns.at(-1)).toEqual({ kind: 'assistant', text: 'Opened the page.' });
   });
 
   it('runs a task end to end, streams state and saves history', async () => {

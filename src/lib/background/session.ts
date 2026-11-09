@@ -1,4 +1,5 @@
 import { runAgent } from '../agent/loop';
+import { resolveApprovalMode, taskSummary } from '../policy/approval';
 import type { BrowserDriver, RiskyDecision, RiskyRequest, UserGate } from '../agent/ports';
 import type { LlmClient } from '../llm/client';
 import type { BgToPanel, GateRequest, PanelToBg } from '../messages';
@@ -201,6 +202,7 @@ export class PanelSession {
         sites: new SitePolicy(this.deps.siteStore),
         profile,
         settings,
+        approvalMode: resolveApprovalMode(msg.approvalMode),
         signal: abort.signal,
         newId: this.newId,
         sessionId: conv.id,
@@ -214,7 +216,7 @@ export class PanelSession {
         },
       });
     } catch (e) {
-      conv.turns = [...conv.turns, { kind: 'assistant', text: `Error: ${errMsg(e)}` }];
+      conv.turns = [...conv.turns, { kind: 'assistant', text: taskSummary(resolveApprovalMode(msg.approvalMode), `Error: ${errMsg(e)}`) }];
     } finally {
       await driver.stop().catch(() => {});
       conv.updatedAt = Date.now();

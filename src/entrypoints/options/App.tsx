@@ -5,8 +5,7 @@ import { ProfileStore, removeProfile, saveProfile } from '@/lib/storage/profiles
 import { DEFAULT_SETTINGS, SettingsStore } from '@/lib/storage/settings';
 import { ModelCatalog } from '@/lib/storage/models';
 import { SitePermissionStore } from '@/lib/storage/sites';
-import type { ApprovalMode, ContextMode, Profile, Theme } from '@/lib/types';
-import { ApprovalModeSwitch } from '@/lib/ui/ApprovalModeSwitch';
+import type { ContextMode, Profile, Theme } from '@/lib/types';
 import { supportsVisionFor, visionChoices } from '@/lib/ui/models';
 import { Logo } from '@/lib/ui/icons';
 import { PROVIDER_PRESETS, type ProviderPreset, profileFromPreset } from '@/lib/ui/presets';
@@ -255,7 +254,6 @@ function SitesSection() {
 function GeneralSection() {
   const store = useMemo(() => new SettingsStore(chromeKV()), []);
   const [troubleLimit, setTroubleLimit] = useState(DEFAULT_SETTINGS.troubleLimit);
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>(DEFAULT_SETTINGS.approvalMode);
   const [keywords, setKeywords] = useState('');
   const [debugTiming, setDebugTiming] = useState(false);
   const [theme, setTheme] = useState<Theme>('system');
@@ -263,7 +261,6 @@ function GeneralSection() {
   useEffect(() => {
     void store.get().then((s) => {
       setTroubleLimit(s.troubleLimit);
-      setApprovalMode(s.approvalMode);
       setKeywords(s.riskyKeywords.join(', '));
       setDebugTiming(s.debugTiming);
       setTheme(s.theme);
@@ -280,20 +277,9 @@ function GeneralSection() {
   return (
     <section>
       <h2>General</h2>
-      <div className="field">
-        <span>Approval mode</span>
-        <ApprovalModeSwitch
-          className="seg"
-          value={approvalMode}
-          onChange={(mode) => {
-            setApprovalMode(mode);
-            void store.update({ approvalMode: mode });
-          }}
-        />
-        <p className="muted">
-          Ask checks each risky action. Auto skips routine ones for that task. Hands-off also opens new sites for that task only. Passwords and payments always ask. Allowing the rest of a task is not saved.
-        </p>
-      </div>
+      <p className="muted">
+        Each task starts in Ask. Choose Auto or Hands-off in the side panel before you send; that choice is not saved and cannot be changed while the task is running. Passwords, payments, and submitting a form always ask.
+      </p>
       <div className="field">
         <span>Theme</span>
         <div className="seg" role="radiogroup" aria-label="Theme">

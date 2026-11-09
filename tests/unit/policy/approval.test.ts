@@ -25,9 +25,11 @@ describe('approval mode', () => {
     expect(skipsSitePrompt('hands-off')).toBe(true);
   });
 
-  it('makes a Hands-off summary one line', () => {
-    expect(taskSummary('hands-off', 'Opened the page.\nThe price is $5.')).toBe('Opened the page. The price is $5.');
+  it('makes a Hands-off ending one sentence', () => {
+    expect(taskSummary('hands-off', 'Opened the page.\nThe price is $5.')).toBe('Opened the page.');
     expect(taskSummary('hands-off', ' \n ')).toBe('Task complete.');
+    expect(taskSummary('hands-off', 'No punctuation here')).toBe('No punctuation here');
+    expect(taskSummary('hands-off', `${'A'.repeat(200)}. More.`).length).toBe(160);
     expect(taskSummary('ask', 'Opened the page.\nThe price is $5.')).toBe('Opened the page.\nThe price is $5.');
   });
 });

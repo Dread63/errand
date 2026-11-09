@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Each task uses Ask, Auto, or Hands-off. Ask checks risky actions; Auto skips routine ones; Hands-off also opens new sites for that task only. Passwords and payments always ask. "Allow for the rest of this task" lasts only until the task ends and is not saved. The per-site auto-approve checkbox and saved site list are gone. Hands-off still leaves a one-line summary.
+- Each task starts in Ask. Auto and Hands-off can be chosen for that task only and are not saved. Auto skips routine steps such as downloads. Passwords, payments, and submitting a form always ask, whether the agent clicks, presses Enter, or types and submits. "Allow for the rest of this task" is offered only on routine prompts, lasts until the task ends, and is not saved. Hands-off also opens new sites for that task and ends with one sentence, including when the task is rejected or stopped. The per-site auto-approve list is gone.
 - The side panel is available only in Errand tab groups; clicking the toolbar icon adds the current tab to the group and opens the panel.
 - Healthy tasks can keep running; after repeated errors or actions on an unchanged page, Errand asks whether to continue.
 

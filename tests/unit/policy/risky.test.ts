@@ -46,12 +46,22 @@ describe('classifyRisk', () => {
     expect(risk(call('click'), el({ name: 'Next' })).risky).toBe(false);
   });
   it('flags Enter inside a form via type(submit) or key', () => {
-    expect(risk(call('type', { id: 1, text: 'q', submit: true }), el({ tag: 'input', inForm: true })).risky).toBe(true);
-    expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', inForm: true })).risky).toBe(true);
+    expect(risk(call('type', { id: 1, text: 'q', submit: true }), el({ tag: 'input', inForm: true })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', inForm: true })).hard).toBe(true);
     expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', inForm: false })).risky).toBe(false);
     // A newline in typed text presses Enter too.
     expect(risk(call('type', { id: 1, text: 'a\nb' }), el({ tag: 'input', inForm: true })).reasons).toEqual(['Pressing Enter inside a form']);
+    expect(risk(call('type', { id: 1, text: 'a\nb' }), el({ tag: 'input', inForm: true })).hard).toBe(true);
     expect(risk(call('type', { text: 'a\tb' }), el({ tag: 'input', inForm: true })).risky).toBe(false);
+  });
+  it('treats every form submission as a hard gate, including an ordinary field or a plain submit button', () => {
+    expect(risk(call('click'), el({ isSubmit: true, name: 'Go' })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Enter' }), el({ name: 'Go', inForm: true })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Enter' }), el({ isSubmit: true, name: 'Place order' })).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Space' }), el({ isSubmit: true, name: 'Go' })).hard).toBe(true);
+    expect(risk(call('type', { text: '1 Main St', submit: true }), el({ tag: 'input', name: 'Address', inForm: true })).hard).toBe(true);
+    expect(risk(call('click'), el({ tag: 'a', role: 'link', name: 'Get', download: true })).hard).toBe(false);
+    expect(risk(call('scroll', { direction: 'down', risky: true })).hard).toBe(false);
   });
   it('keeps the hard gate when a key press submits a sensitive field or activates a keyword button', () => {
     expect(risk(call('key', { combo: 'Enter' }), el({ tag: 'input', type: 'password', inForm: true })).hard).toBe(true);
@@ -59,7 +69,6 @@ describe('classifyRisk', () => {
     expect(risk(call('key', { combo: 'Return' }), el({ name: 'Pay now', inForm: true })).hard).toBe(true);
     expect(risk(call('key', { combo: 'Space' }), el({ name: 'Delete account' })).hard).toBe(true);
     expect(risk(call('key', { combo: 'Tab' }), el({ name: 'Pay now' })).risky).toBe(false);
-    expect(risk(call('key', { combo: 'Enter' }), el({ name: 'Go', inForm: true })).hard).toBe(false);
   });
   it('flags downloads and file uploads', () => {
     expect(risk(call('click'), el({ tag: 'a', role: 'link', name: 'Get', href: 'https://a.test/app.dmg' })).risky).toBe(true);

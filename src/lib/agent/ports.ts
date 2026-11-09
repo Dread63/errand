@@ -15,6 +15,8 @@ export interface RiskyRequest {
   description: string;
   reasons: string[];
   reason: string;
+  /** False for passwords, payments, and form submits. Those prompts have no task-grant button. */
+  grantable: boolean;
 }
 
 /** `task` approves the action on screen and skips later routine prompts until the task ends. */

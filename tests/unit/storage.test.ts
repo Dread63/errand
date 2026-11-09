@@ -104,24 +104,29 @@ describe('SettingsStore', () => {
     }
   });
 
-  it('stores Ask, Auto, and Hands-off, and falls back to Ask', async () => {
+  it('strips a saved approval mode once and then reads without writing', async () => {
     const kv = memoryKV();
-    const store = new SettingsStore(kv);
-    expect((await store.get()).approvalMode).toBe('ask');
-    expect((await store.update({ approvalMode: 'auto' })).approvalMode).toBe('auto');
-    expect((await store.update({ approvalMode: 'hands-off' })).approvalMode).toBe('hands-off');
-    await kv.set('settings', { approvalMode: 'always', debugTiming: true });
-    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true, approvalMode: 'ask' });
-  });
-
-  it('deletes a saved auto-approve site list instead of keeping it', async () => {
-    const kv = memoryKV();
-    await kv.set('bypassOrigins', ['https://shop.test', 'https://pay.test']);
-    await kv.set('settings', { approvalMode: 'auto' });
-    const store = new SettingsStore(kv);
-    expect((await store.get()).approvalMode).toBe('auto');
+    let writes = 0;
+    const counted = {
+      get: kv.get.bind(kv),
+      set: async (key: string, value: unknown) => {
+        writes++;
+        await kv.set(key, value);
+      },
+      remove: kv.remove.bind(kv),
+    };
+    await kv.set('settings', { approvalMode: 'auto', stepLimit: 30, debugTiming: true });
+    await kv.set('bypassOrigins', ['https://shop.test']);
+    const store = new SettingsStore(counted);
+    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true });
+    expect(await kv.get('settings')).toEqual({ debugTiming: true });
     expect(await kv.get('bypassOrigins')).toBeUndefined();
-    expect((await store.get()).approvalMode).toBe('auto');
+    expect(await kv.get('legacyApprovalMigrated')).toBe(true);
+    const afterMigration = writes;
+    await kv.set('settings', { approvalMode: 'hands-off', debugTiming: true });
+    expect(await store.get()).toEqual({ ...DEFAULT_SETTINGS, debugTiming: true });
+    expect(writes).toBe(afterMigration);
+    expect(await kv.get('settings')).toEqual({ approvalMode: 'hands-off', debugTiming: true });
   });
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { chromeKV } from '@/lib/storage/kv';
 import { selectModel } from '@/lib/storage/models';
 import { ProfileStore } from '@/lib/storage/profiles';
@@ -27,6 +27,7 @@ export function App() {
   const stores = useMemo(() => ({ profiles: new ProfileStore(chromeKV()), settings: new SettingsStore(chromeKV()) }), []);
   const [view, setView] = useState<'chat' | 'history'>('chat');
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('ask');
+  const wasRunning = useRef(false);
 
   const firstUser = state.turns.find((t) => t.kind === 'user');
   const title = firstUser && firstUser.kind === 'user' ? firstUser.text : 'New chat';
@@ -37,14 +38,12 @@ export function App() {
   }, [send]);
 
   useEffect(() => {
-    const load = () => void stores.settings.get().then((s) => setApprovalMode(s.approvalMode));
-    void load();
-    const onChanged = () => load();
-    chrome.storage.onChanged.addListener(onChanged);
-    return () => chrome.storage.onChanged.removeListener(onChanged);
-  }, [stores]);
+    if (wasRunning.current && !state.running) setApprovalMode('ask');
+    wasRunning.current = state.running;
+  }, [state.running]);
 
   async function newChat() {
+    setApprovalMode('ask');
     dispatch({ type: 'new_chat' });
     setView('chat');
     const tabId = await targetTabId();
@@ -57,7 +56,7 @@ export function App() {
       dispatch({ type: 'error', message: 'There is no tab for the agent to control.' });
       return;
     }
-    send({ type: 'start', conversationId: state.conversationId, text, attachments, tabId });
+    send({ type: 'start', conversationId: state.conversationId, text, attachments, tabId, approvalMode });
   }
 
   return (
@@ -100,10 +99,7 @@ export function App() {
             ready={canSend(active)}
             vision={active ? supportsVisionFor(active, active.model) : false}
             approvalMode={approvalMode}
-            onApprovalMode={(mode) => {
-              setApprovalMode(mode);
-              void stores.settings.update({ approvalMode: mode });
-            }}
+            onApprovalMode={setApprovalMode}
             modelMenu={
               <ModelMenu
                 profiles={profiles}

@@ -9,9 +9,9 @@ export const APPROVAL_MODE_LABEL: Record<ApprovalMode, string> = {
 };
 
 export const APPROVAL_MODE_HINT: Record<ApprovalMode, string> = {
-  ask: 'Ask before each risky action.',
-  auto: 'Skip routine risky actions during this task. Passwords and payments still ask.',
-  'hands-off': 'Also open new sites for this task only. Passwords and payments still ask. A one-line summary is shown when the task finishes.',
+  ask: 'Ask before risky actions. This choice applies only to the task you send.',
+  auto: 'Skip routine actions such as downloads for this task. Passwords, payments, and form submits still ask.',
+  'hands-off': 'Also open new sites for this task only. Passwords, payments, and form submits still ask. The task ends with one sentence.',
 };
 
 /** Missing or unrecognized values stay on Ask. */
@@ -33,9 +33,15 @@ export function skipsSitePrompt(mode: ApprovalMode): boolean {
   return mode === 'hands-off';
 }
 
-/** Hands-off still reports each finished task in one line. Other modes keep the model's text. */
+const SUMMARY_MAX = 160;
+
+/** Hands-off reports every ending as one sentence. Other modes keep the model's text. */
 export function taskSummary(mode: ApprovalMode, text: string): string {
   if (mode !== 'hands-off') return text;
-  const line = text.replace(/\s+/g, ' ').trim();
-  return line || 'Task complete.';
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (!flat) return 'Task complete.';
+  const end = flat.search(/[.!?](?:\s|$)/);
+  let line = end === -1 ? flat : flat.slice(0, end + 1);
+  if (line.length > SUMMARY_MAX) line = `${line.slice(0, SUMMARY_MAX - 1).trimEnd()}…`;
+  return line;
 }
