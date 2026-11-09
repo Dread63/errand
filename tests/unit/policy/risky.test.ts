@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { classifyRisk, isSensitiveField } from '@/lib/policy/risky';
+import { validateCall } from '@/lib/agent/tools';
+import { classifyRisk, focusAllowsEnter, isSensitiveField } from '@/lib/policy/risky';
 import { DEFAULT_RISKY_KEYWORDS } from '@/lib/storage/settings';
 import type { ActionTarget, ElementInfo, ToolCall } from '@/lib/types';
 
@@ -81,5 +82,128 @@ describe('classifyRisk', () => {
   });
   it('uses the configured keyword list', () => {
     expect(classifyRisk(call('click'), target(el({ name: 'Archive' })), ['archive']).risky).toBe(true);
+  });
+
+  it('treats type as a click when it targets a pay or submit control, and Enter outside a form', () => {
+    const checked = (name: string, args: Record<string, unknown>, element: ElementInfo, vision = false) =>
+      classifyRisk(validateCall({ id: 'c', name, args }, vision), target(element), DEFAULT_RISKY_KEYWORDS);
+    const pay = el({ name: 'Pay now', inForm: false, isSubmit: false });
+    const order = el({ name: 'Place order', inForm: false, isSubmit: false });
+    const submit = el({ name: 'Continue', inForm: true, isSubmit: true });
+    expect(checked('type', { id: 1, text: 'x' }, pay)).toMatchObject({ risky: true, hard: true });
+    expect(checked('type', { x: 4, y: 5, text: 'x' }, pay, true).hard).toBe(true);
+    expect(checked('type', { id: 1, text: 'x' }, submit)).toMatchObject({ risky: true, hard: true, reasons: ['Typing activates a submit button'] });
+    expect(checked('type', { text: 'x', submit: true }, pay).hard).toBe(true);
+    expect(checked('type', { text: 'a\nb' }, order).reasons).toContain('Label contains "order"');
+    expect(checked('type', { text: 'a\nb' }, order).hard).toBe(true);
+    expect(checked('key', { combo: 'NumpadEnter' }, pay).hard).toBe(true);
+    // Typing plain text into a focused button does not click it.
+    expect(checked('type', { text: 'hello' }, pay).hard).toBe(false);
+    // A newline in a spreadsheet cell is not a form submit. Tab-then-Enter is not blanket-blocked either.
+    const cell = el({ tag: 'textarea', role: 'textbox', name: '', inForm: false });
+    expect(checked('type', { text: 'hi\n' }, cell).risky).toBe(false);
+    expect(checked('type', { text: '1\t\n' }, el({ tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false })).risky).toBe(false);
+    expect(checked('type', { text: '1\t', submit: true }, el({ tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false })).risky).toBe(false);
+    const field = (name: string) => el({ tag: 'input', role: 'textbox', type: 'text', name, inForm: false, isSubmit: false });
+    expect(checked('type', { id: 1, text: '100' }, field('Order number')).hard).toBe(false);
+    expect(checked('type', { id: 1, text: 'Hi' }, field('Post title')).hard).toBe(false);
+    expect(checked('type', { id: 1, text: 'a@b.c' }, field('Confirm email')).hard).toBe(false);
+    expect(checked('click', { id: 1 }, field('Order number')).hard).toBe(false);
+    expect(checked('click', { id: 1 }, field('Post title')).hard).toBe(false);
+    expect(checked('click', { id: 1 }, field('Confirm email')).hard).toBe(false);
+    expect(checked('type', { id: 1, text: 'Hi' }, field('Post title')).hard).toBe(false);
+    expect(checked('key', { combo: 'Space' }, field('Post title')).risky).toBe(false);
+    expect(checked('key', { combo: 'Enter' }, field('Order number')).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, field('Post title')).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, field('Confirm email')).hard).toBe(true);
+    const search = el({ tag: 'input', role: 'searchbox', type: 'search', name: 'Search', inForm: false });
+    expect(checked('key', { combo: 'Enter' }, search).risky).toBe(false);
+    expect(checked('type', { text: 'hats', submit: true }, search).risky).toBe(false);
+    expect(checked('type', { id: 1, text: 'x' }, el({ tag: 'a', role: 'link', name: 'Get', download: true }))).toMatchObject({ risky: true, hard: false });
+  });
+
+  it('asks for Enter in a text field whose label is a risky word, including submit', () => {
+    const checked = (name: string, args: Record<string, unknown>, element: ElementInfo) =>
+      classifyRisk(validateCall({ id: 'c', name, args }, false), target(element), DEFAULT_RISKY_KEYWORDS);
+    const send = el({ tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false, isSubmit: false });
+    const post = el({ tag: 'div', role: 'textbox', name: 'Post your reply', inForm: false, isSubmit: false });
+    expect(checked('key', { combo: 'Enter' }, send)).toMatchObject({ hard: true, reasons: ['Label contains "send"'] });
+    expect(checked('key', { combo: 'Control+Enter' }, send).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, post)).toMatchObject({ hard: true, reasons: ['Label contains "post"'] });
+    expect(checked('type', { text: 'hi', submit: true }, send).hard).toBe(true);
+    expect(checked('type', { id: 1, text: 'hi', submit: true }, send).hard).toBe(true);
+    expect(checked('type', { id: 1, text: 'hi' }, send).hard).toBe(false);
+    const submit = el({ tag: 'button', role: 'button', type: 'button', name: 'Submit', inForm: false, isSubmit: false });
+    const payment = el({ tag: 'div', role: 'clickable', name: 'Submit payment', inForm: false, isSubmit: false });
+    expect(checked('click', { id: 1 }, submit)).toMatchObject({ hard: true, reasons: ['Label contains "submit"'] });
+    expect(checked('click', { id: 1 }, payment).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, payment).hard).toBe(true);
+    expect(checked('key', { combo: 'Space' }, submit).hard).toBe(true);
+  });
+
+  it('refuses Enter after Tab when the new text field has a risky word', () => {
+    const send = el({ id: 2, tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false });
+    const cell = el({ id: 9, tag: 'textarea', role: 'textbox', name: '', inForm: false });
+    const search = el({ id: 4, tag: 'input', role: 'searchbox', type: 'search', name: 'Search', inForm: false });
+    expect(focusAllowsEnter(send, 1, DEFAULT_RISKY_KEYWORDS)).toBe(false);
+    expect(focusAllowsEnter(send, 2, DEFAULT_RISKY_KEYWORDS)).toBe(true);
+    expect(focusAllowsEnter(cell, 1, DEFAULT_RISKY_KEYWORDS)).toBe(true);
+    expect(focusAllowsEnter(search, 1, DEFAULT_RISKY_KEYWORDS)).toBe(true);
+  });
+
+  it('hard-gates a pay or buy label on any control that is not a text field', () => {
+    const checked = (name: string, args: Record<string, unknown>, element: ElementInfo) =>
+      classifyRisk(validateCall({ id: 'c', name, args }, false), target(element), DEFAULT_RISKY_KEYWORDS);
+    const control = (tag: string, role: string, name: string) =>
+      el({ tag, role, name, inForm: false, isSubmit: false });
+    const buy = control('div', 'clickable', 'Buy now');
+    const pay = control('span', 'clickable', 'Pay now');
+    const order = control('div', 'clickable', 'Place order');
+    expect(checked('click', { id: 1 }, buy)).toMatchObject({ risky: true, hard: true, reasons: ['Label contains "buy"'] });
+    expect(checked('key', { combo: 'Enter' }, buy).hard).toBe(true);
+    expect(checked('key', { combo: 'Space' }, buy).hard).toBe(true);
+    expect(checked('click', { id: 1 }, pay).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, pay).hard).toBe(true);
+    expect(checked('key', { combo: 'Space' }, pay).hard).toBe(true);
+    for (const element of [
+      control('span', 'clickable', 'Pay now'),
+      control('label', 'clickable', 'Pay now'),
+      control('td', 'clickable', 'Pay now'),
+      control('div', 'option', 'Pay now'),
+      control('div', 'tab', 'Pay now'),
+      control('div', 'checkbox', 'Pay now'),
+      control('div', 'menuitemradio', 'Pay now'),
+    ]) {
+      expect(checked('click', { id: 1 }, element).hard).toBe(true);
+      expect(checked('key', { combo: 'Enter' }, element).hard).toBe(true);
+      expect(checked('key', { combo: 'Space' }, element).hard).toBe(true);
+    }
+    expect(checked('type', { id: 1, text: 'x' }, order)).toMatchObject({ risky: true, hard: true });
+    expect(checked('type', { text: 'x', submit: true }, order).hard).toBe(true);
+    expect(checked('type', { text: 'hello' }, order).risky).toBe(false);
+    expect(checked('click', { id: 1 }, control('div', 'clickable', 'Next')).risky).toBe(false);
+  });
+
+  it('hard-gates keys that enter a password or card, including paste, but not navigation', () => {
+    const password = el({ tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
+    const card = el({ tag: 'input', role: 'textbox', autocomplete: 'cc-number', name: 'Card' });
+    expect(risk(call('key', { combo: 's' }), password).hard).toBe(true);
+    expect(risk(call('key', { combo: 'e' }), password).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Meta+v' }), card)).toMatchObject({ hard: true });
+    expect(risk(call('key', { combo: 'Control+v' }), card).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Tab' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'Shift+Tab' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'Escape' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'ArrowLeft' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'a' }), el({ tag: 'input', role: 'textbox', type: 'text', name: 'Quantity' })).risky).toBe(false);
+  });
+
+  it('hard-gates clicks, typing, and keys on a frame the page cannot read', () => {
+    const frame = el({ tag: 'iframe', role: 'generic', name: 'Secure payment input frame' });
+    expect(risk(call('type', { text: '4242' }), frame)).toMatchObject({ hard: true, reasons: ['Interacting with a frame the page cannot read'] });
+    expect(risk(call('click'), frame).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Enter' }), frame).hard).toBe(true);
+    expect(risk(call('scroll', { direction: 'down' }), frame).risky).toBe(false);
+    expect(risk(call('hover'), frame).risky).toBe(false);
   });
 });

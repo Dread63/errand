@@ -22,7 +22,30 @@ export const DEFAULT_RISKY_KEYWORDS = [
   'publish',
   'transfer',
   'subscribe',
+  'submit',
+  'payment',
 ];
+
+/** Saved copies of the list from before submit and payment were added. */
+const PREVIOUS_RISKY_KEYWORDS = [
+  'buy',
+  'pay',
+  'purchase',
+  'order',
+  'checkout',
+  'confirm',
+  'delete',
+  'remove',
+  'send',
+  'post',
+  'publish',
+  'transfer',
+  'subscribe',
+];
+
+function sameWords(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((word, i) => word === b[i]);
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   activeProfileId: null,
@@ -49,9 +72,13 @@ export class SettingsStore {
     const raw = (await this.kv.get<Partial<Settings> & { stepLimit?: number; approvalMode?: unknown }>(KEY)) ?? {};
     const { stepLimit: _legacy, approvalMode: _mode, ...stored } = raw;
     const limit = stored.troubleLimit;
+    const savedKeywords = stored.riskyKeywords;
     return {
       ...DEFAULT_SETTINGS,
       ...stored,
+      riskyKeywords: Array.isArray(savedKeywords) && sameWords(savedKeywords, PREVIOUS_RISKY_KEYWORDS)
+        ? DEFAULT_RISKY_KEYWORDS
+        : savedKeywords ?? DEFAULT_SETTINGS.riskyKeywords,
       troubleLimit: typeof limit === 'number' && Number.isFinite(limit) && limit >= 1
         ? Math.min(200, Math.round(limit))
         : DEFAULT_SETTINGS.troubleLimit,

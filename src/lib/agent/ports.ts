@@ -6,7 +6,7 @@ export interface BrowserDriver {
   listTabs(): Promise<TabInfo[]>;
   observe(opts: { mode: ContextMode; screenshot: boolean }): Promise<Observation>;
   target(call: ToolCall): Promise<ActionTarget>;
-  perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string>;
+  perform(call: ToolCall, target: ActionTarget, mode: ContextMode, keywords?: readonly string[]): Promise<string>;
   highlight(target: ActionTarget | null): Promise<void>;
   reattach(): Promise<void>;
 }

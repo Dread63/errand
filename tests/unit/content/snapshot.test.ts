@@ -216,6 +216,13 @@ describe('focusedElementInfo and readPageText', () => {
   it('returns null when nothing is focused', () => {
     expect(focusedElementInfo(document, new ElementRegistry())).toBeNull();
   });
+  it('stops at a frame it cannot read', () => {
+    document.body.innerHTML = `<iframe title="Secure payment input frame"></iframe>`;
+    const frame = document.querySelector('iframe')!;
+    Object.defineProperty(frame, 'contentDocument', { get() { throw new DOMException('Blocked'); } });
+    frame.focus();
+    expect(focusedElementInfo(document, new ElementRegistry())).toMatchObject({ tag: 'iframe', name: 'Secure payment input frame' });
+  });
   it('reads and clips page text', () => {
     document.body.innerHTML = `<h1>Title</h1><p>  Hello   world  </p>`;
     expect(readPageText(document, 1000)).toBe('Title\nHello world');

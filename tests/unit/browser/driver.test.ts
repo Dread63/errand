@@ -25,6 +25,7 @@ function setup(url = 'https://shop.test/') {
     waitForLoad: async () => {},
   };
   let handler: ((tabId: number) => Promise<void>) | null = null;
+  let afterKey: (combo: string) => void = () => {};
   const cdp: CdpLike = {
     setConflictHandler: (fn) => {
       handler = fn;
@@ -34,7 +35,10 @@ function setup(url = 'https://shop.test/') {
     click: async (_t, x, y) => void log.push(`cdp.click:${x},${y}`),
     wheel: async (_t, x, y, d) => void log.push(`cdp.wheel:${x},${y},${d}`),
     insertText: async (_t, text) => void log.push(`cdp.insert:${text}`),
-    key: async (_t, combo) => void log.push(`cdp.key:${combo}`),
+    key: async (_t, combo) => {
+      log.push(`cdp.key:${combo}`);
+      afterKey(combo);
+    },
     screenshot: async () => 'data:image/jpeg;base64,SHOT',
     detachAll: async () => void log.push('cdp.detachAll'),
     clearCanceled: () => void log.push('cdp.clearCanceled'),
@@ -83,6 +87,7 @@ function setup(url = 'https://shop.test/') {
     conflictHandler: () => handler,
     setResolve: (r: ResolveResult) => (resolveResult = r),
     setFocused: (e: ElementInfo | null) => (focused = e),
+    setAfterKey: (fn: (combo: string) => void) => (afterKey = fn),
     setPointInfo: (e: ElementInfo | null) => (pointInfo = e),
   };
 }
@@ -203,6 +208,83 @@ describe('ChromeDriver.perform', () => {
     log.length = 0;
     expect(await driver.perform(call('click', { x: 140, y: 50 }), t, 'compact')).toBe('Clicked generic "A1".');
     expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.click:140,50']);
+  });
+
+  it('does not press Enter after Tab when focus has moved to a button', async () => {
+    const { driver, log, setFocused, setAfterKey } = setup();
+    const quantity = info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false });
+    const buy = info({ id: 2, tag: 'button', role: 'button', name: 'Buy now', inForm: false });
+    setFocused(quantity);
+    setAfterKey((combo) => {
+      if (combo === 'Tab') setFocused(buy);
+    });
+    const t = await driver.target(call('type', { text: '1\t\n' }));
+    log.length = 0;
+    await expect(driver.perform(call('type', { text: '1\t\n' }), t, 'compact')).rejects.toThrow(/Buy now/);
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:1', 'cdp.key:Tab']);
+  });
+
+  it('does not press the Enter from submit:true after Tab lands on a button', async () => {
+    const { driver, log, setFocused, setAfterKey } = setup();
+    setFocused(info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false }));
+    setAfterKey((combo) => {
+      if (combo === 'Tab') setFocused(info({ id: 2, tag: 'button', role: 'button', name: 'Buy now', inForm: false }));
+    });
+    const t = await driver.target(call('type', { text: '1\t' }));
+    log.length = 0;
+    await expect(driver.perform(call('type', { text: '1\t', submit: true }), t, 'compact')).rejects.toThrow(/Buy now/);
+    expect(log.filter((l) => l.startsWith('cdp'))).not.toContain('cdp.key:Enter');
+  });
+
+  it('still presses Enter after Tab when focus stays in a spreadsheet cell', async () => {
+    const { driver, log, setFocused } = setup();
+    setFocused(info({ id: 9, tag: 'textarea', role: 'textbox', name: '', inForm: false }));
+    const t = await driver.target(call('type', { x: 140, y: 50, text: '' }));
+    log.length = 0;
+    await driver.perform(call('type', { x: 140, y: 50, text: 'Rent\t1200\n' }), t, 'compact');
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual([
+      'cdp.click:140,50',
+      'cdp.insert:Rent',
+      'cdp.key:Tab',
+      'cdp.insert:1200',
+      'cdp.key:Enter',
+    ]);
+  });
+
+  it('does not press Enter after Tab lands in a different form field', async () => {
+    const { driver, log, setFocused, setAfterKey } = setup();
+    setFocused(info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false }));
+    setAfterKey((combo) => {
+      if (combo === 'Tab') setFocused(info({ id: 3, tag: 'input', role: 'textbox', type: 'text', name: 'Address', inForm: true }));
+    });
+    const t = await driver.target(call('type', { text: '1\t2\n' }));
+    log.length = 0;
+    await expect(driver.perform(call('type', { text: '1\t2\n' }), t, 'compact')).rejects.toThrow(/Address/);
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:1', 'cdp.key:Tab', 'cdp.insert:2']);
+  });
+
+  it('does not press Enter after Tab lands in a text field with a risky word', async () => {
+    const { driver, log, setFocused, setAfterKey } = setup();
+    setFocused(info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false }));
+    setAfterKey((combo) => {
+      if (combo === 'Tab') setFocused(info({ id: 2, tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false }));
+    });
+    const t = await driver.target(call('type', { text: '1\t\n' }));
+    log.length = 0;
+    await expect(driver.perform(call('type', { text: '1\t\n' }), t, 'compact')).rejects.toThrow(/Send a message/);
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:1', 'cdp.key:Tab']);
+  });
+
+  it('does not type into a password field that Tab landed on', async () => {
+    const { driver, log, setFocused, setAfterKey } = setup();
+    setFocused(info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false }));
+    setAfterKey((combo) => {
+      if (combo === 'Tab') setFocused(info({ id: 2, tag: 'input', role: 'textbox', type: 'password', name: 'Password', inForm: false }));
+    });
+    const t = await driver.target(call('type', { text: '1\tsecret' }));
+    log.length = 0;
+    await expect(driver.perform(call('type', { text: '1\tsecret' }), t, 'compact')).rejects.toThrow(/Password/);
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:1', 'cdp.key:Tab']);
   });
 
   it('types a table in one call: tabs press Tab, newlines press Enter, and nothing is select-all cleared', async () => {

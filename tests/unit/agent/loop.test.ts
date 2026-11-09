@@ -347,6 +347,75 @@ describe('runAgent', () => {
     expect(s.driver.performed.map((c) => c.name)).toEqual(['click']);
   });
 
+  const typeBypasses = [
+    {
+      path: 'typing on a Pay now button',
+      action: () => toolCall('type', { id: 2, text: 'x' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { name: 'Pay now', inForm: false, isSubmit: false });
+      },
+      prompt: 'risky:Type "x" into the "Pay now" button',
+    },
+    {
+      path: 'typing on a form submit button',
+      action: () => toolCall('type', { id: 2, text: 'x' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.elements[2] = el(2, { name: 'Continue', inForm: true, isSubmit: true });
+      },
+      prompt: 'risky:Type "x" into the "Continue" button',
+    },
+    {
+      path: 'submitting a Pay now button outside a form',
+      action: () => toolCall('type', { text: 'x', submit: true }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { name: 'Pay now', inForm: false, isSubmit: false });
+      },
+      prompt: 'risky:Type "x" into the "Pay now" button and press Enter',
+    },
+    {
+      path: 'a newline on a Place order button outside a form',
+      action: () => toolCall('type', { text: 'a\nb' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { name: 'Place order', inForm: false, isSubmit: false });
+      },
+      prompt: 'risky:Type "a⏎b" into the "Place order" button',
+    },
+    {
+      path: 'typing into a frame the page cannot read',
+      action: () => toolCall('type', { text: '4242' }),
+      arm: (s: ReturnType<typeof setup>) => {
+        s.driver.focused = el(2, { tag: 'iframe', role: 'generic', name: 'Secure payment input frame' });
+      },
+      prompt: 'risky:Type "4242" into "Secure payment input frame"',
+    },
+  ];
+
+  it.each(typeBypasses)('$path asks in Ask, Auto, and Hands-off', async ({ action, arm, prompt }) => {
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      const s = setup([action(), toolCall('done', { summary: 'x' })]);
+      s.deps.approvalMode = mode;
+      arm(s);
+      s.gate.siteAnswers = ['once'];
+      s.gate.riskyAnswers = [false];
+      await runAgent(task, s.deps);
+      expect(s.gate.riskySeen[0]?.grantable).toBe(false);
+      expect(s.gate.log).toContain(prompt);
+      expect(s.driver.performed).toEqual([]);
+    }
+  });
+
+  it.each(typeBypasses)('$path still asks after a task grant', async ({ action, arm, prompt }) => {
+    const s = setup([toolCall('click', { id: 8 }), action(), toolCall('done', { summary: 'x' })]);
+    s.driver.elements[8] = el(8, { tag: 'a', role: 'link', name: 'Get', download: true });
+    arm(s);
+    s.gate.siteAnswers = ['once'];
+    s.gate.riskyAnswers = ['task', false];
+    await runAgent(task, s.deps);
+    expect(s.gate.riskySeen.map((r) => r.grantable)).toEqual([true, false]);
+    expect(s.gate.log).toContain(prompt);
+    expect(s.driver.performed.map((c) => c.name)).toEqual(['click']);
+  });
+
   it('hands-off opens a new site for this task only and still asks for a card field', async () => {
     const s = setup([
       toolCall('type', { id: 3, text: '4111' }),
@@ -490,6 +559,89 @@ describe('runAgent', () => {
     const ask = setup([toolCall('done', { summary: 'Opened the page.\nThe price is $5.' })]);
     ask.gate.siteAnswers = ['once'];
     expect(last(await runAgent(task, ask.deps))).toEqual({ kind: 'assistant', text: 'Opened the page.\nThe price is $5.' });
+  });
+
+  it('asks before a key types or pastes into a password or card, in every mode', async () => {
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      for (const combo of ['s', 'Meta+v']) {
+        const s = setup([toolCall('key', { combo }), toolCall('done', { summary: 'x' })]);
+        s.deps.approvalMode = mode;
+        s.driver.focused = el(3, { tag: 'input', role: 'textbox', type: combo === 's' ? 'password' : 'text', autocomplete: combo === 's' ? undefined : 'cc-number', name: combo === 's' ? 'Password' : 'Card' });
+        s.gate.siteAnswers = ['once'];
+        s.gate.riskyAnswers = [false];
+        await runAgent(task, s.deps);
+        expect(s.gate.riskySeen[0]?.grantable).toBe(false);
+        expect(s.gate.log).toContain(`risky:Press ${combo}`);
+        expect(s.driver.performed).toEqual([]);
+      }
+    }
+  });
+
+  it('asks before a click or Enter on a Buy now div, in every mode', async () => {
+    const buy = { tag: 'div', role: 'clickable', name: 'Buy now', inForm: false, isSubmit: false };
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      const click = setup([toolCall('click', { id: 2 }), toolCall('done', { summary: 'x' })]);
+      click.deps.approvalMode = mode;
+      click.driver.elements[2] = el(2, buy);
+      click.gate.siteAnswers = ['once'];
+      click.gate.riskyAnswers = [false];
+      await runAgent(task, click.deps);
+      expect(click.gate.riskySeen[0]?.grantable).toBe(false);
+      expect(click.gate.log).toContain('risky:Click "Buy now"');
+      expect(click.driver.performed).toEqual([]);
+
+      const enter = setup([toolCall('key', { combo: 'Enter' }), toolCall('done', { summary: 'x' })]);
+      enter.deps.approvalMode = mode;
+      enter.driver.focused = el(2, buy);
+      enter.gate.siteAnswers = ['once'];
+      enter.gate.riskyAnswers = [false];
+      await runAgent(task, enter.deps);
+      expect(enter.gate.riskySeen[0]?.grantable).toBe(false);
+      expect(enter.gate.log).toContain('risky:Press Enter');
+      expect(enter.driver.performed).toEqual([]);
+    }
+  });
+
+  it('asks before Enter in a text field whose label is a risky word', async () => {
+    const send = { tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false, isSubmit: false };
+    const cases = [
+      { action: () => toolCall('key', { combo: 'Enter' }), focus: send, prompt: 'risky:Press Enter' },
+      { action: () => toolCall('key', { combo: 'Control+Enter' }), focus: send, prompt: 'risky:Press Control+Enter' },
+      { action: () => toolCall('key', { combo: 'Enter' }), focus: { tag: 'div', role: 'textbox', name: 'Post your reply', inForm: false, isSubmit: false }, prompt: 'risky:Press Enter' },
+      { action: () => toolCall('type', { text: 'hi', submit: true }), focus: send, prompt: 'risky:Type "hi" into the "Send a message" text box and press Enter' },
+    ];
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      for (const c of cases) {
+        const s = setup([c.action(), toolCall('done', { summary: 'x' })]);
+        s.deps.approvalMode = mode;
+        s.driver.focused = el(3, c.focus);
+        s.gate.siteAnswers = ['once'];
+        s.gate.riskyAnswers = [false];
+        await runAgent(task, s.deps);
+        expect(s.gate.riskySeen[0]?.grantable).toBe(false);
+        expect(s.gate.log).toContain(c.prompt);
+        expect(s.driver.performed).toEqual([]);
+      }
+    }
+  });
+
+  it('presses Enter in a plain search box without a prompt', async () => {
+    const s = setup([toolCall('key', { combo: 'Enter' }), toolCall('done', { summary: 'x' })]);
+    s.deps.approvalMode = 'auto';
+    s.driver.focused = el(3, { tag: 'input', role: 'searchbox', type: 'search', name: 'Search', inForm: false });
+    s.gate.siteAnswers = ['once'];
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('risky:'))).toEqual([]);
+    expect(s.driver.performed.map((c) => c.name)).toEqual(['key']);
+  });
+
+  it('types into an ordinary Order number field without a prompt', async () => {
+    const s = setup([toolCall('type', { id: 2, text: '100' }), toolCall('done', { summary: 'x' })]);
+    s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', type: 'text', name: 'Order number', inForm: true, isSubmit: false });
+    s.gate.siteAnswers = ['once'];
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('risky:'))).toEqual([]);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([2]);
   });
 
   it('masks typed passwords in the saved step', async () => {
