@@ -263,6 +263,18 @@ describe('ChromeDriver.perform', () => {
     expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:1', 'cdp.key:Tab', 'cdp.insert:2']);
   });
 
+  it('does not press Enter after Tab lands in a text field with a risky word', async () => {
+    const { driver, log, setFocused, setAfterKey } = setup();
+    setFocused(info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false }));
+    setAfterKey((combo) => {
+      if (combo === 'Tab') setFocused(info({ id: 2, tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false }));
+    });
+    const t = await driver.target(call('type', { text: '1\t\n' }));
+    log.length = 0;
+    await expect(driver.perform(call('type', { text: '1\t\n' }), t, 'compact')).rejects.toThrow(/Send a message/);
+    expect(log.filter((l) => l.startsWith('cdp'))).toEqual(['cdp.insert:1', 'cdp.key:Tab']);
+  });
+
   it('does not type into a password field that Tab landed on', async () => {
     const { driver, log, setFocused, setAfterKey } = setup();
     setFocused(info({ id: 1, tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false }));

@@ -12,7 +12,7 @@ export function isSensitiveField(e: ElementInfo): boolean {
   );
 }
 
-function matchKeyword(label: string, keywords: string[]): string | null {
+function matchKeyword(label: string, keywords: readonly string[]): string | null {
   for (const kw of keywords) {
     const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`\\b${escaped}\\b`, 'i').test(label)) return kw;
@@ -67,11 +67,14 @@ export function focusAllowsTypedText(now: ElementInfo | null, startId: number | 
   return isTextEntry(now) && !isSensitiveField(now) && !isOpaqueFrame(now);
 }
 
-/** After Tab, Enter is safe in a text field that will not submit a form or type a secret. */
-export function focusAllowsEnter(now: ElementInfo | null, startId: number | undefined): boolean {
+/**
+ * After Tab, Enter is safe only in a text field that will not submit a form, type a secret,
+ * or carry a risky word such as "send". The field focus started on was already classified.
+ */
+export function focusAllowsEnter(now: ElementInfo | null, startId: number | undefined, keywords: readonly string[]): boolean {
   if (!now) return false;
   if (startId !== undefined && now.id === startId) return true;
-  return isTextEntry(now) && !now.inForm && !isSensitiveField(now) && !isOpaqueFrame(now);
+  return isTextEntry(now) && !now.inForm && !isSensitiveField(now) && !isOpaqueFrame(now) && matchKeyword(now.name, keywords) === null;
 }
 
 function submitReason(call: ToolCall, pressesEnter: boolean): string {
@@ -80,7 +83,7 @@ function submitReason(call: ToolCall, pressesEnter: boolean): string {
   return pressesEnter || call.name === 'type' ? 'Pressing Enter on a submit button' : 'Pressing Space on a submit button';
 }
 
-export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: string[]): { risky: boolean; reasons: string[]; hard: boolean } {
+export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: readonly string[]): { risky: boolean; reasons: string[]; hard: boolean } {
   const reasons: string[] = [];
   /** A mode or task grant never skips these: credentials, payment, keyword labels, form submits, and unread frames. */
   let hard = false;
@@ -93,9 +96,10 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
     const pressesEnter = call.name === 'key' && isEnter(call.args.combo);
     const pressesSpace = call.name === 'key' && isSpace(call.args.combo);
     const sendsEnter = pressesEnter || typesEnter;
-    // Keyword and submit gates apply when the action activates something that is not a text field.
-    // A div, span, option, or checkbox labelled "Buy now" counts. An "Order number" text field does not.
-    const activates = !isTextEntry(e) && (call.name === 'click' || typeClicks || sendsEnter || pressesSpace);
+    // Enter always counts, including in a text field labelled "Send a message".
+    // Click, the click type performs first, and Space count only on controls that are not text fields,
+    // so typing into "Order number" does not. A plain search box has no risky word, so Enter there does not either.
+    const activates = sendsEnter || (!isTextEntry(e) && (call.name === 'click' || typeClicks || pressesSpace));
     if (call.name === 'type' && isSensitiveField(e)) {
       reasons.push('Typing into a password, payment or one-time-code field');
       hard = true;

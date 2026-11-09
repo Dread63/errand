@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateCall } from '@/lib/agent/tools';
-import { classifyRisk, isSensitiveField } from '@/lib/policy/risky';
+import { classifyRisk, focusAllowsEnter, isSensitiveField } from '@/lib/policy/risky';
 import { DEFAULT_RISKY_KEYWORDS } from '@/lib/storage/settings';
 import type { ActionTarget, ElementInfo, ToolCall } from '@/lib/types';
 
@@ -111,9 +111,44 @@ describe('classifyRisk', () => {
     expect(checked('click', { id: 1 }, field('Order number')).hard).toBe(false);
     expect(checked('click', { id: 1 }, field('Post title')).hard).toBe(false);
     expect(checked('click', { id: 1 }, field('Confirm email')).hard).toBe(false);
-    expect(checked('key', { combo: 'Enter' }, field('Order number')).risky).toBe(false);
+    expect(checked('type', { id: 1, text: 'Hi' }, field('Post title')).hard).toBe(false);
     expect(checked('key', { combo: 'Space' }, field('Post title')).risky).toBe(false);
+    expect(checked('key', { combo: 'Enter' }, field('Order number')).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, field('Post title')).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, field('Confirm email')).hard).toBe(true);
+    const search = el({ tag: 'input', role: 'searchbox', type: 'search', name: 'Search', inForm: false });
+    expect(checked('key', { combo: 'Enter' }, search).risky).toBe(false);
+    expect(checked('type', { text: 'hats', submit: true }, search).risky).toBe(false);
     expect(checked('type', { id: 1, text: 'x' }, el({ tag: 'a', role: 'link', name: 'Get', download: true }))).toMatchObject({ risky: true, hard: false });
+  });
+
+  it('asks for Enter in a text field whose label is a risky word, including submit', () => {
+    const checked = (name: string, args: Record<string, unknown>, element: ElementInfo) =>
+      classifyRisk(validateCall({ id: 'c', name, args }, false), target(element), DEFAULT_RISKY_KEYWORDS);
+    const send = el({ tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false, isSubmit: false });
+    const post = el({ tag: 'div', role: 'textbox', name: 'Post your reply', inForm: false, isSubmit: false });
+    expect(checked('key', { combo: 'Enter' }, send)).toMatchObject({ hard: true, reasons: ['Label contains "send"'] });
+    expect(checked('key', { combo: 'Control+Enter' }, send).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, post)).toMatchObject({ hard: true, reasons: ['Label contains "post"'] });
+    expect(checked('type', { text: 'hi', submit: true }, send).hard).toBe(true);
+    expect(checked('type', { id: 1, text: 'hi', submit: true }, send).hard).toBe(true);
+    expect(checked('type', { id: 1, text: 'hi' }, send).hard).toBe(false);
+    const submit = el({ tag: 'button', role: 'button', type: 'button', name: 'Submit', inForm: false, isSubmit: false });
+    const payment = el({ tag: 'div', role: 'clickable', name: 'Submit payment', inForm: false, isSubmit: false });
+    expect(checked('click', { id: 1 }, submit)).toMatchObject({ hard: true, reasons: ['Label contains "submit"'] });
+    expect(checked('click', { id: 1 }, payment).hard).toBe(true);
+    expect(checked('key', { combo: 'Enter' }, payment).hard).toBe(true);
+    expect(checked('key', { combo: 'Space' }, submit).hard).toBe(true);
+  });
+
+  it('refuses Enter after Tab when the new text field has a risky word', () => {
+    const send = el({ id: 2, tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false });
+    const cell = el({ id: 9, tag: 'textarea', role: 'textbox', name: '', inForm: false });
+    const search = el({ id: 4, tag: 'input', role: 'searchbox', type: 'search', name: 'Search', inForm: false });
+    expect(focusAllowsEnter(send, 1, DEFAULT_RISKY_KEYWORDS)).toBe(false);
+    expect(focusAllowsEnter(send, 2, DEFAULT_RISKY_KEYWORDS)).toBe(true);
+    expect(focusAllowsEnter(cell, 1, DEFAULT_RISKY_KEYWORDS)).toBe(true);
+    expect(focusAllowsEnter(search, 1, DEFAULT_RISKY_KEYWORDS)).toBe(true);
   });
 
   it('hard-gates a pay or buy label on any control that is not a text field', () => {

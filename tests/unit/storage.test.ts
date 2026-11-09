@@ -79,10 +79,20 @@ describe('SettingsStore', () => {
     const s = new SettingsStore(memoryKV());
     expect(await s.get()).toEqual(DEFAULT_SETTINGS);
     expect(DEFAULT_SETTINGS.troubleLimit).toBe(8);
-    expect(DEFAULT_RISKY_KEYWORDS).toContain('checkout');
+    expect(DEFAULT_RISKY_KEYWORDS).toEqual(expect.arrayContaining(['checkout', 'submit', 'payment']));
     await s.update({ troubleLimit: 12 });
     expect((await s.get()).troubleLimit).toBe(12);
     expect((await s.get()).riskyKeywords).toEqual(DEFAULT_RISKY_KEYWORDS);
+  });
+
+  it('adds submit and payment to a saved copy of the previous keyword list', async () => {
+    const kv = memoryKV();
+    const store = new SettingsStore(kv);
+    const previous = ['buy', 'pay', 'purchase', 'order', 'checkout', 'confirm', 'delete', 'remove', 'send', 'post', 'publish', 'transfer', 'subscribe'];
+    await kv.set('settings', { riskyKeywords: previous });
+    expect((await store.get()).riskyKeywords).toEqual(DEFAULT_RISKY_KEYWORDS);
+    await kv.set('settings', { riskyKeywords: ['buy', 'archive'] });
+    expect((await store.get()).riskyKeywords).toEqual(['buy', 'archive']);
   });
 
   it('discards legacy step limits while preserving other settings and new thresholds', async () => {
