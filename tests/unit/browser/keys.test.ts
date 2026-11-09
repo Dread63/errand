@@ -5,6 +5,7 @@ import { ToolError } from '@/lib/errors';
 describe('parseCombo', () => {
   it('named keys', () => {
     expect(parseCombo('Enter')).toEqual({ key: 'Enter', code: 'Enter', keyCode: 13, modifiers: 0, text: '\r' });
+    expect(parseCombo('NumpadEnter')).toEqual({ key: 'Enter', code: 'NumpadEnter', keyCode: 13, modifiers: 0, text: '\r' });
     expect(parseCombo('Shift+Tab')).toEqual({ key: 'Tab', code: 'Tab', keyCode: 9, modifiers: 8 });
     expect(parseCombo('escape')).toMatchObject({ key: 'Escape', keyCode: 27 });
     expect(parseCombo('ArrowDown')).toMatchObject({ key: 'ArrowDown', keyCode: 40 });

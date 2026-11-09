@@ -1,5 +1,6 @@
 import { MODE_LIMITS } from '../agent/modes';
 import { pillLabel } from '../agent/tools';
+import { focusAllowsEnter, focusAllowsTypedText } from '../policy/risky';
 import type { BrowserDriver } from '../agent/ports';
 import type { ContentRequest, ResolveResult } from '../content/protocol';
 import { ToolError } from '../errors';
@@ -171,12 +172,34 @@ export class ChromeDriver implements BrowserDriver {
     return element ? { tabId, origin, element, point: { x, y } } : { tabId, origin, point: { x, y } };
   }
 
+  private async focusedNow(tabId: number): Promise<ElementInfo | null> {
+    return this.content.send<ElementInfo | null>(tabId, { type: 'focused' }).catch(() => null);
+  }
+
+  /** Tab can land on a button or a form the original field's approval did not cover. */
+  private async afterTab(tabId: number, startId: number | undefined, enter: boolean): Promise<void> {
+    const now = await this.focusedNow(tabId);
+    const ok = enter ? focusAllowsEnter(now, startId) : focusAllowsTypedText(now, startId);
+    if (ok) return;
+    const where = now ? `${now.role || now.tag} "${clip(now.name || now.tag, 60)}"` : 'an unknown control';
+    const did = enter ? 'Enter was not pressed' : 'Did not keep typing';
+    throw new ToolError(`${did}. Tab moved focus to ${where}. Do that as its own action so it can be approved.`);
+  }
+
   /** Inserts text; tab characters press Tab and newlines press Enter (moving between cells or fields). */
-  private async typeText(tabId: number, text: string): Promise<void> {
+  private async typeText(tabId: number, text: string, startId: number | undefined): Promise<void> {
+    let tabbed = false;
     for (const part of text.replace(/\r\n?/g, '\n').split(/([\t\n])/)) {
-      if (part === '\t') await this.cdp.key(tabId, 'Tab');
-      else if (part === '\n') await this.cdp.key(tabId, 'Enter');
-      else if (part) await this.cdp.insertText(tabId, part);
+      if (part === '\t') {
+        await this.cdp.key(tabId, 'Tab');
+        tabbed = true;
+      } else if (part === '\n') {
+        if (tabbed) await this.afterTab(tabId, startId, true);
+        await this.cdp.key(tabId, 'Enter');
+      } else if (part) {
+        if (tabbed) await this.afterTab(tabId, startId, false);
+        await this.cdp.insertText(tabId, part);
+      }
     }
   }
 
@@ -261,8 +284,11 @@ export class ChromeDriver implements BrowserDriver {
           await this.cdp.key(tabId, 'Backspace');
         }
         const text = String(a.text);
-        await this.typeText(tabId, text);
-        if (a.submit === true) await this.cdp.key(tabId, 'Enter');
+        await this.typeText(tabId, text, target.element?.id);
+        if (a.submit === true) {
+          if (text.includes('\t')) await this.afterTab(tabId, target.element?.id, true);
+          await this.cdp.key(tabId, 'Enter');
+        }
         if (a.submit === true || /[\r\n]/.test(text)) await this.settle(tabId);
         return `Typed into ${label(target)}${a.submit === true ? ' and pressed Enter' : ''}.`;
       }

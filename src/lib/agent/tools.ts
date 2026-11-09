@@ -30,7 +30,7 @@ export function toolSchemas(vision: boolean): ToolSchema[] {
     tool('click', `Click an element.${target}`, { id: ID, ...at }, vision ? [] : ['id']),
     tool(
       'type',
-      `Type text. With id${vision ? ' (or x and y)' : ''}, clicks that spot first; without, types into whatever has focus (e.g. a selected spreadsheet cell). In text, a tab character (\\t) presses Tab and a newline (\\n) presses Enter, so a whole row or table can be entered in one call.`,
+      `Type text. With id${vision ? ' (or x and y)' : ''}, clicks that spot first; without, types into whatever has focus (e.g. a selected spreadsheet cell). In text, a tab character (\\t) presses Tab and a newline (\\n) presses Enter, so a whole row or table can be entered in one call. If Tab moves focus onto a button, a password, or a form field, the rest of this call is not typed and Enter is not pressed; do that as its own action.`,
       {
         id: ID,
         ...at,
