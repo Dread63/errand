@@ -3,12 +3,19 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to submit to the Chrome Web Store, such as v1.2.0
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,3 +38,102 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" .output/*-chrome.zip --title "Errand $GITHUB_REF_NAME" --generate-notes
+
+  # Uploads the tagged zip to an existing Chrome Web Store item and submits it for review.
+  # A missing secret fails this job only. The GitHub release above has already succeeded.
+  # Creating a brand-new store item is not available in API v2; the dashboard listing and
+  # privacy tabs must already be filled in. https://developer.chrome.com/docs/webstore/using-api
+  chrome-web-store:
+    needs: release
+    if: always() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+      CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+      CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+      CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+      CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check the tag and the store secrets
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$expected" != "$RELEASE_TAG" ]; then
+            echo "::error::Tag $RELEASE_TAG does not match package.json version ($expected)"
+            exit 1
+          fi
+          missing=()
+          for name in CHROME_EXTENSION_ID CHROME_PUBLISHER_ID CHROME_CLIENT_ID CHROME_CLIENT_SECRET CHROME_REFRESH_TOKEN; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Chrome Web Store publish needs these repository secrets: ${missing[*]}. The GitHub release is unchanged. Add the secrets, then rerun this workflow with the tag."
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run compile
+      - run: npm test
+      - run: npm run zip
+      - name: Upload the package and submit it for review
+        run: |
+          set -euo pipefail
+          zip=$(echo .output/*-chrome.zip)
+          if [ ! -f "$zip" ]; then
+            echo "::error::No Chrome zip was produced"
+            exit 1
+          fi
+          token_file=$(mktemp)
+          token_code=$(curl -sS -o "$token_file" -w '%{http_code}' -X POST "https://oauth2.googleapis.com/token" \
+            -d "client_id=${CHROME_CLIENT_ID}" \
+            -d "client_secret=${CHROME_CLIENT_SECRET}" \
+            -d "refresh_token=${CHROME_REFRESH_TOKEN}" \
+            -d "grant_type=refresh_token")
+          token=$(jq -r '.access_token // empty' "$token_file")
+          if [ "$token_code" != "200" ] || [ -z "$token" ]; then
+            echo "::error::Chrome Web Store token refresh failed (HTTP ${token_code}): $(jq -c '{error, error_description}' "$token_file")"
+            exit 1
+          fi
+          rm -f "$token_file"
+          name="publishers/${CHROME_PUBLISHER_ID}/items/${CHROME_EXTENSION_ID}"
+          upload_file=$(mktemp)
+          upload_code=$(curl -sS -o "$upload_file" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${token}" \
+            -H "x-goog-api-version: 2" \
+            -T "$zip" \
+            "https://chromewebstore.googleapis.com/upload/v2/${name}:upload")
+          echo "Upload HTTP ${upload_code}: $(jq -c 'del(.publicKey)' "$upload_file")"
+          state=$(jq -r '.uploadState // empty' "$upload_file")
+          for _ in 1 2 3 4 5 6; do
+            if [ "$state" != "IN_PROGRESS" ]; then break; fi
+            sleep 10
+            status_file=$(mktemp)
+            curl -sS -o "$status_file" -H "Authorization: Bearer ${token}" -H "x-goog-api-version: 2" \
+              "https://chromewebstore.googleapis.com/v2/${name}:fetchStatus"
+            state=$(jq -r '.lastAsyncUploadState // empty' "$status_file")
+            echo "Upload status: $state"
+            rm -f "$status_file"
+          done
+          if [ "$upload_code" -lt 200 ] || [ "$upload_code" -ge 300 ] || [ "$state" != "SUCCEEDED" ]; then
+            echo "::error::Chrome Web Store upload did not succeed (HTTP ${upload_code}, state: ${state:-unknown})."
+            exit 1
+          fi
+          publish_file=$(mktemp)
+          publish_code=$(curl -sS -o "$publish_file" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${token}" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Type: application/json" \
+            -d '{"publishType":"DEFAULT_PUBLISH"}' \
+            "https://chromewebstore.googleapis.com/v2/${name}:publish")
+          echo "Publish HTTP ${publish_code}: $(jq -c '.' "$publish_file")"
+          if [ "$publish_code" -lt 200 ] || [ "$publish_code" -ge 300 ] || jq -e '.error' "$publish_file" >/dev/null; then
+            echo "::error::Chrome Web Store did not accept the submission. If this item has never been published, or its visibility was changed in the dashboard, publish it once there and rerun this workflow."
+            exit 1
+          fi
+          echo "Submitted ${RELEASE_TAG} for Chrome Web Store review."

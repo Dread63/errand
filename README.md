@@ -108,7 +108,7 @@ Design docs live in [`docs/superpowers/specs`](docs/superpowers/specs).
 1. Bump `version` in `package.json` and add an entry to [CHANGELOG.md](CHANGELOG.md).
 2. Commit and push, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. The **Release** workflow tests the build, checks the tag matches `package.json`, and attaches `errand-X.Y.Z-chrome.zip` to a GitHub release.
-4. Upload that zip in the [Chrome Web Store dashboard](https://chrome.google.com/webstore/devconsole). Listing text and permission justifications are in [`docs/store/listing.md`](docs/store/listing.md).
+4. The same workflow uploads that zip to the existing Chrome Web Store item and submits it for review. It can also be run by hand (Actions → Release → Run workflow) with the tag, which submits the store package again without creating another GitHub release. Repository secrets: `CHROME_EXTENSION_ID`, `CHROME_PUBLISHER_ID`, `CHROME_CLIENT_ID`, `CHROME_CLIENT_SECRET`, and `CHROME_REFRESH_TOKEN`. The store item has to exist already, with the listing and privacy tabs filled in; the API cannot create a brand-new item. Listing text is in [`docs/store/listing.md`](docs/store/listing.md).
 
 ## License
 
