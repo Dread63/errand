@@ -1,6 +1,7 @@
 import { MODE_LIMITS } from '../agent/modes';
 import { pillLabel } from '../agent/tools';
 import { focusAllowsEnter, focusAllowsTypedText } from '../policy/risky';
+import { DEFAULT_RISKY_KEYWORDS } from '../storage/settings';
 import type { BrowserDriver } from '../agent/ports';
 import type { ContentRequest, ResolveResult } from '../content/protocol';
 import { ToolError } from '../errors';
@@ -177,9 +178,9 @@ export class ChromeDriver implements BrowserDriver {
   }
 
   /** Tab can land on a button or a form the original field's approval did not cover. */
-  private async afterTab(tabId: number, startId: number | undefined, enter: boolean): Promise<void> {
+  private async afterTab(tabId: number, startId: number | undefined, enter: boolean, keywords: readonly string[]): Promise<void> {
     const now = await this.focusedNow(tabId);
-    const ok = enter ? focusAllowsEnter(now, startId) : focusAllowsTypedText(now, startId);
+    const ok = enter ? focusAllowsEnter(now, startId, keywords) : focusAllowsTypedText(now, startId);
     if (ok) return;
     const where = now ? `${now.role || now.tag} "${clip(now.name || now.tag, 60)}"` : 'an unknown control';
     const did = enter ? 'Enter was not pressed' : 'Did not keep typing';
@@ -187,17 +188,17 @@ export class ChromeDriver implements BrowserDriver {
   }
 
   /** Inserts text; tab characters press Tab and newlines press Enter (moving between cells or fields). */
-  private async typeText(tabId: number, text: string, startId: number | undefined): Promise<void> {
+  private async typeText(tabId: number, text: string, startId: number | undefined, keywords: readonly string[]): Promise<void> {
     let tabbed = false;
     for (const part of text.replace(/\r\n?/g, '\n').split(/([\t\n])/)) {
       if (part === '\t') {
         await this.cdp.key(tabId, 'Tab');
         tabbed = true;
       } else if (part === '\n') {
-        if (tabbed) await this.afterTab(tabId, startId, true);
+        if (tabbed) await this.afterTab(tabId, startId, true, keywords);
         await this.cdp.key(tabId, 'Enter');
       } else if (part) {
-        if (tabbed) await this.afterTab(tabId, startId, false);
+        if (tabbed) await this.afterTab(tabId, startId, false, keywords);
         await this.cdp.insertText(tabId, part);
       }
     }
@@ -243,11 +244,11 @@ export class ChromeDriver implements BrowserDriver {
     await timed('settle: waitForLoad', () => this.tabs.waitForLoad(tabId, undefined, 0)).catch(() => {});
   }
 
-  async perform(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
+  async perform(call: ToolCall, target: ActionTarget, mode: ContextMode, keywords: readonly string[] = DEFAULT_RISKY_KEYWORDS): Promise<string> {
     this.stepLabel = pillLabel(call, target);
     this.ringShown = false;
     try {
-      return await this.act(call, target, mode);
+      return await this.act(call, target, mode, keywords);
     } finally {
       // The ring marks the element being acted on; once the action is over it must not linger
       // (it is fixed-position, so it would also drift away from the element as the page scrolls).
@@ -255,7 +256,7 @@ export class ChromeDriver implements BrowserDriver {
     }
   }
 
-  private async act(call: ToolCall, target: ActionTarget, mode: ContextMode): Promise<string> {
+  private async act(call: ToolCall, target: ActionTarget, mode: ContextMode, keywords: readonly string[]): Promise<string> {
     const tabId = target.tabId;
     const a = call.args;
     switch (call.name) {
@@ -284,9 +285,9 @@ export class ChromeDriver implements BrowserDriver {
           await this.cdp.key(tabId, 'Backspace');
         }
         const text = String(a.text);
-        await this.typeText(tabId, text, target.element?.id);
+        await this.typeText(tabId, text, target.element?.id, keywords);
         if (a.submit === true) {
-          if (text.includes('\t')) await this.afterTab(tabId, target.element?.id, true);
+          if (text.includes('\t')) await this.afterTab(tabId, target.element?.id, true, keywords);
           await this.cdp.key(tabId, 'Enter');
         }
         if (a.submit === true || /[\r\n]/.test(text)) await this.settle(tabId);

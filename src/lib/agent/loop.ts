@@ -196,7 +196,7 @@ async function act(d: AgentDeps, call: ToolCall, step: StepTurn, out: { role?: s
   }
   let result: string;
   try {
-    result = await d.driver.perform(call, target, d.profile.contextMode);
+    result = await d.driver.perform(call, target, d.profile.contextMode, d.settings.riskyKeywords);
   } catch (e) {
     if (e instanceof ToolError) return `Error: ${e.message}`;
     throw e;

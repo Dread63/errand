@@ -602,6 +602,39 @@ describe('runAgent', () => {
     }
   });
 
+  it('asks before Enter in a text field whose label is a risky word', async () => {
+    const send = { tag: 'input', role: 'textbox', type: 'text', name: 'Send a message', inForm: false, isSubmit: false };
+    const cases = [
+      { action: () => toolCall('key', { combo: 'Enter' }), focus: send, prompt: 'risky:Press Enter' },
+      { action: () => toolCall('key', { combo: 'Control+Enter' }), focus: send, prompt: 'risky:Press Control+Enter' },
+      { action: () => toolCall('key', { combo: 'Enter' }), focus: { tag: 'div', role: 'textbox', name: 'Post your reply', inForm: false, isSubmit: false }, prompt: 'risky:Press Enter' },
+      { action: () => toolCall('type', { text: 'hi', submit: true }), focus: send, prompt: 'risky:Type "hi" into the "Send a message" text box and press Enter' },
+    ];
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      for (const c of cases) {
+        const s = setup([c.action(), toolCall('done', { summary: 'x' })]);
+        s.deps.approvalMode = mode;
+        s.driver.focused = el(3, c.focus);
+        s.gate.siteAnswers = ['once'];
+        s.gate.riskyAnswers = [false];
+        await runAgent(task, s.deps);
+        expect(s.gate.riskySeen[0]?.grantable).toBe(false);
+        expect(s.gate.log).toContain(c.prompt);
+        expect(s.driver.performed).toEqual([]);
+      }
+    }
+  });
+
+  it('presses Enter in a plain search box without a prompt', async () => {
+    const s = setup([toolCall('key', { combo: 'Enter' }), toolCall('done', { summary: 'x' })]);
+    s.deps.approvalMode = 'auto';
+    s.driver.focused = el(3, { tag: 'input', role: 'searchbox', type: 'search', name: 'Search', inForm: false });
+    s.gate.siteAnswers = ['once'];
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('risky:'))).toEqual([]);
+    expect(s.driver.performed.map((c) => c.name)).toEqual(['key']);
+  });
+
   it('types into an ordinary Order number field without a prompt', async () => {
     const s = setup([toolCall('type', { id: 2, text: '100' }), toolCall('done', { summary: 'x' })]);
     s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', type: 'text', name: 'Order number', inForm: true, isSubmit: false });
