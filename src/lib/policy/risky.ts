@@ -93,9 +93,9 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
     const pressesEnter = call.name === 'key' && isEnter(call.args.combo);
     const pressesSpace = call.name === 'key' && isSpace(call.args.combo);
     const sendsEnter = pressesEnter || typesEnter;
-    // Keyword and submit gates apply only when the action would activate a button or link.
-    // Typing or clicking an ordinary field such as "Order number" does not.
-    const activates = isActivatingControl(e) && (call.name === 'click' || typeClicks || sendsEnter || pressesSpace);
+    // Keyword and submit gates apply when the action activates something that is not a text field.
+    // A div, span, option, or checkbox labelled "Buy now" counts. An "Order number" text field does not.
+    const activates = !isTextEntry(e) && (call.name === 'click' || typeClicks || sendsEnter || pressesSpace);
     if (call.name === 'type' && isSensitiveField(e)) {
       reasons.push('Typing into a password, payment or one-time-code field');
       hard = true;
