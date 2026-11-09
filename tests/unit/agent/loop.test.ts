@@ -561,6 +561,31 @@ describe('runAgent', () => {
     expect(last(await runAgent(task, ask.deps))).toEqual({ kind: 'assistant', text: 'Opened the page.\nThe price is $5.' });
   });
 
+  it('asks before a key types or pastes into a password or card, in every mode', async () => {
+    for (const mode of ['ask', 'auto', 'hands-off'] as const) {
+      for (const combo of ['s', 'Meta+v']) {
+        const s = setup([toolCall('key', { combo }), toolCall('done', { summary: 'x' })]);
+        s.deps.approvalMode = mode;
+        s.driver.focused = el(3, { tag: 'input', role: 'textbox', type: combo === 's' ? 'password' : 'text', autocomplete: combo === 's' ? undefined : 'cc-number', name: combo === 's' ? 'Password' : 'Card' });
+        s.gate.siteAnswers = ['once'];
+        s.gate.riskyAnswers = [false];
+        await runAgent(task, s.deps);
+        expect(s.gate.riskySeen[0]?.grantable).toBe(false);
+        expect(s.gate.log).toContain(`risky:Press ${combo}`);
+        expect(s.driver.performed).toEqual([]);
+      }
+    }
+  });
+
+  it('types into an ordinary Order number field without a prompt', async () => {
+    const s = setup([toolCall('type', { id: 2, text: '100' }), toolCall('done', { summary: 'x' })]);
+    s.driver.elements[2] = el(2, { tag: 'input', role: 'textbox', type: 'text', name: 'Order number', inForm: true, isSubmit: false });
+    s.gate.siteAnswers = ['once'];
+    await runAgent(task, s.deps);
+    expect(s.gate.log.filter((l) => l.startsWith('risky:'))).toEqual([]);
+    expect(s.driver.performed.map((c) => c.args.id)).toEqual([2]);
+  });
+
   it('masks typed passwords in the saved step', async () => {
     const s = setup([toolCall('type', { id: 3, text: 'hunter2' }), toolCall('done', { summary: 'x' })]);
     s.driver.elements[3] = el(3, { tag: 'input', role: 'textbox', type: 'password', name: 'Password' });

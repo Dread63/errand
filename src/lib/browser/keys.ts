@@ -14,6 +14,7 @@ const MODS: Record<string, number> = { alt: 1, option: 1, control: 2, ctrl: 2, m
 const NAMED: Record<string, [key: string, code: string, keyCode: number, text?: string]> = {
   enter: ['Enter', 'Enter', 13, '\r'],
   return: ['Enter', 'Enter', 13, '\r'],
+  numpadenter: ['Enter', 'NumpadEnter', 13, '\r'],
   tab: ['Tab', 'Tab', 9],
   escape: ['Escape', 'Escape', 27],
   esc: ['Escape', 'Escape', 27],

@@ -99,9 +99,31 @@ describe('classifyRisk', () => {
     expect(checked('key', { combo: 'NumpadEnter' }, pay).hard).toBe(true);
     // Typing plain text into a focused button does not click it.
     expect(checked('type', { text: 'hello' }, pay).hard).toBe(false);
-    // A newline in a spreadsheet cell is not a form submit.
-    expect(checked('type', { text: 'hi\n' }, el({ tag: 'textarea', role: 'textbox', name: '', inForm: false })).risky).toBe(false);
+    // A newline in a spreadsheet cell is not a form submit. Tab-then-Enter is not blanket-blocked either.
+    const cell = el({ tag: 'textarea', role: 'textbox', name: '', inForm: false });
+    expect(checked('type', { text: 'hi\n' }, cell).risky).toBe(false);
+    expect(checked('type', { text: '1\t\n' }, el({ tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false })).risky).toBe(false);
+    expect(checked('type', { text: '1\t', submit: true }, el({ tag: 'input', role: 'textbox', type: 'text', name: 'Quantity', inForm: false })).risky).toBe(false);
+    const field = (name: string) => el({ tag: 'input', role: 'textbox', type: 'text', name, inForm: false, isSubmit: false });
+    expect(checked('type', { id: 1, text: '100' }, field('Order number')).hard).toBe(false);
+    expect(checked('type', { id: 1, text: 'Hi' }, field('Post title')).hard).toBe(false);
+    expect(checked('type', { id: 1, text: 'a@b.c' }, field('Confirm email')).hard).toBe(false);
+    expect(checked('click', { id: 1 }, field('Order number')).hard).toBe(false);
     expect(checked('type', { id: 1, text: 'x' }, el({ tag: 'a', role: 'link', name: 'Get', download: true }))).toMatchObject({ risky: true, hard: false });
+  });
+
+  it('hard-gates keys that enter a password or card, including paste, but not navigation', () => {
+    const password = el({ tag: 'input', role: 'textbox', type: 'password', name: 'Password' });
+    const card = el({ tag: 'input', role: 'textbox', autocomplete: 'cc-number', name: 'Card' });
+    expect(risk(call('key', { combo: 's' }), password).hard).toBe(true);
+    expect(risk(call('key', { combo: 'e' }), password).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Meta+v' }), card)).toMatchObject({ hard: true });
+    expect(risk(call('key', { combo: 'Control+v' }), card).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Tab' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'Shift+Tab' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'Escape' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'ArrowLeft' }), password).risky).toBe(false);
+    expect(risk(call('key', { combo: 'a' }), el({ tag: 'input', role: 'textbox', type: 'text', name: 'Quantity' })).risky).toBe(false);
   });
 
   it('hard-gates clicks, typing, and keys on a frame the page cannot read', () => {

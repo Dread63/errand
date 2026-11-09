@@ -23,10 +23,55 @@ function matchKeyword(label: string, keywords: string[]): string | null {
 const lastKey = (combo: unknown) => String(combo).split('+').pop()?.trim().toLowerCase();
 const isEnter = (combo: unknown) => ['enter', 'return', 'numpadenter'].includes(lastKey(combo) ?? '');
 const isSpace = (combo: unknown) => lastKey(combo) === 'space';
+const NAV_KEYS = new Set(['tab', 'escape', 'esc', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'up', 'down', 'left', 'right', 'home', 'end', 'pageup', 'pagedown']);
 
 /** A frame we could not read inside. Same-origin frames are opened and described as their contents. */
 function isOpaqueFrame(e: ElementInfo): boolean {
   return e.tag === 'iframe' || e.tag === 'frame';
+}
+
+/** Buttons, links, and submit controls. Enter or Space activates these. A text field does not. */
+export function isActivatingControl(e: ElementInfo): boolean {
+  if (e.isSubmit) return true;
+  if (e.role === 'button' || e.role === 'link' || e.role === 'menuitem') return true;
+  if (e.tag === 'button' || e.tag === 'a' || e.tag === 'summary') return true;
+  return e.tag === 'input' && ['submit', 'button', 'image', 'reset'].includes((e.type ?? '').toLowerCase());
+}
+
+/** Where typed characters go. A button, even one that is also an input, is not one of these. */
+export function isTextEntry(e: ElementInfo): boolean {
+  if (isActivatingControl(e)) return false;
+  if (e.role === 'checkbox' || e.role === 'radio' || e.role === 'switch' || e.role === 'tab') return false;
+  if (e.tag === 'textarea' || e.role === 'textbox' || e.role === 'searchbox') return true;
+  if (e.tag === 'input') {
+    const t = (e.type ?? 'text').toLowerCase();
+    return !['checkbox', 'radio', 'file', 'hidden', 'range', 'color'].includes(t);
+  }
+  return false;
+}
+
+/** Tab, Escape, and arrows move through a field. Shift is allowed. Paste and other shortcuts are not. */
+export function isNavigationKey(combo: unknown): boolean {
+  const parts = String(combo).split('+').map((p) => p.trim().toLowerCase()).filter(Boolean);
+  const key = parts.pop();
+  return !!key && NAV_KEYS.has(key) && parts.every((m) => m === 'shift');
+}
+
+/**
+ * After Tab inside a type call, more characters are safe only in an ordinary text field.
+ * The original field was already approved; same id means focus did not move.
+ */
+export function focusAllowsTypedText(now: ElementInfo | null, startId: number | undefined): boolean {
+  if (!now) return false;
+  if (startId !== undefined && now.id === startId) return true;
+  return isTextEntry(now) && !isSensitiveField(now) && !isOpaqueFrame(now);
+}
+
+/** After Tab, Enter is safe in a text field that will not submit a form or type a secret. */
+export function focusAllowsEnter(now: ElementInfo | null, startId: number | undefined): boolean {
+  if (!now) return false;
+  if (startId !== undefined && now.id === startId) return true;
+  return isTextEntry(now) && !now.inForm && !isSensitiveField(now) && !isOpaqueFrame(now);
 }
 
 function submitReason(call: ToolCall, pressesEnter: boolean): string {
@@ -48,10 +93,15 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
     const pressesEnter = call.name === 'key' && isEnter(call.args.combo);
     const pressesSpace = call.name === 'key' && isSpace(call.args.combo);
     const sendsEnter = pressesEnter || typesEnter;
-    // Click, the click type performs first, Enter, or Space. Enter counts even outside a form.
-    const activates = call.name === 'click' || typeClicks || sendsEnter || pressesSpace;
+    // Keyword and submit gates apply only when the action would activate a button or link.
+    // Typing or clicking an ordinary field such as "Order number" does not.
+    const activates = isActivatingControl(e) && (call.name === 'click' || typeClicks || sendsEnter || pressesSpace);
     if (call.name === 'type' && isSensitiveField(e)) {
       reasons.push('Typing into a password, payment or one-time-code field');
+      hard = true;
+    }
+    if (call.name === 'key' && isSensitiveField(e) && !isNavigationKey(call.args.combo) && !pressesEnter) {
+      reasons.push('Pressing a key in a password, payment or one-time-code field');
       hard = true;
     }
     if (sendsEnter && isSensitiveField(e)) {

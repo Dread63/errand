@@ -28,7 +28,7 @@ YOU STAY IN CONTROL
 • Errand works only in its own purple "Errand" tab group.
 • Each task starts in Ask. Auto and Hands-off can be chosen for that task only, and the choice is not saved.
 • It asks before working on a site for the first time (allow once, always, or deny), unless you chose Hands-off for this task. Always allow is the only choice that is saved.
-• Passwords, payments, and submitting a form always ask. That includes clicking or typing on a pay, send, or submit button, pressing Enter or Space on one, and Enter inside a form even when the button is not inside a form. A frame the page cannot read, such as a card field, also asks. Auto and Hands-off may skip routine steps such as downloads. You choose which words count as risky.
+• Passwords, payment fields, and one-time codes always ask, whether Errand types or presses keys, including paste. Tab, Escape, and the arrow keys in those fields do not ask. Submitting always asks: clicking or typing on a submit button, or Enter or Space on a pay, send, or submit button, or Enter inside a form. An ordinary field such as an order number does not ask. If Tab inside one type action moves onto a button, a password, or a different form field, Errand does not type the rest or press Enter. A frame the page cannot read, such as a card field, also asks. Auto and Hands-off may skip routine steps such as downloads. You choose which words count as risky.
 • On a routine prompt you can allow the rest of that task. It ends with the task and is not saved.
 • A live cursor and highlights show exactly what it is about to do.
 • Stop ends the task immediately. Hands-off leaves a one-sentence summary.
@@ -111,6 +111,6 @@ Paste this into the dashboard's **Test instructions** field and fill in a real k
 4. Click "Test connection", then type or pick the model: openai/gpt-4o-mini
 5. Click Save, then go back to any web page (e.g. https://en.wikipedia.org/wiki/Special:Random).
 6. Note that opening the side panel puts the current tab into an "Errand" tab group. In the side panel, type: "Summarise this page in three bullet points" and press Send.
-7. Each task starts in Ask. Approve the site when asked. Errand reads the page and replies. Chrome shows its debugging bar while the task runs; this is expected. Auto and Hands-off, above the message box, apply to that task only and are not saved. Passwords, payments, submitting a form (including typing on a pay or submit button), and a card field inside a frame still ask in every mode.
+7. Each task starts in Ask. Approve the site when asked. Errand reads the page and replies. Chrome shows its debugging bar while the task runs; this is expected. Auto and Hands-off, above the message box, apply to that task only and are not saved. Passwords, payment fields, and one-time codes still ask in every mode, including keys and paste (Tab, Escape, and arrows do not). So does submitting a form, Enter or Space on a pay or submit button, and a card field inside a frame. An ordinary field such as an order number does not ask.
 8. Try a task with a risky action (e.g. on a search page, "search for 'chrome extensions' and click the first result") to see the approval prompts. Press Stop at any time to end a task.
 ```
