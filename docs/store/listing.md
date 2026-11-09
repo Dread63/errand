@@ -26,10 +26,12 @@ Errand works with any OpenAI-compatible API. Use OpenAI or OpenRouter, or keep e
 
 YOU STAY IN CONTROL
 • Errand works only in its own purple "Errand" tab group.
-• It asks before working on a site for the first time (allow once, always, or deny).
-• It asks before risky actions: purchases, submissions, deletions, password fields and downloads. You choose which words count as risky.
+• Each task starts in Ask. Auto and Hands-off can be chosen for that task only, and the choice is not saved.
+• It asks before working on a site for the first time (allow once, always, or deny), unless you chose Hands-off for this task. Always allow is the only choice that is saved.
+• Passwords, payment fields, and one-time codes always ask, whether Errand types or presses keys, including paste. Tab, Escape, and the arrow keys in those fields do not ask. Enter asks when the label contains a risky word, including a text field such as Send a message, Control+Enter, and typing that presses Enter. Clicking or typing in that text field without Enter does not. On a control that is not a text field, a click, typing on it, Enter, or Space asks, including a div, span, or menu option. Submit and payment are risky words, so a Submit button asks. Enter in a search box does not ask unless it is inside a form or its label has a risky word. Enter inside a form always asks. Typing into a text field such as an order number, without pressing Enter, does not ask. If Tab inside one type action moves onto a button, a password, a different form field, or a text field with a risky word, Errand does not type the rest or press Enter. A frame the page cannot read, such as a card field, also asks. Auto and Hands-off may skip routine steps such as downloads. You choose which words count as risky.
+• On a routine prompt you can allow the rest of that task. It ends with the task and is not saved.
 • A live cursor and highlights show exactly what it is about to do.
-• Stop ends the task immediately.
+• Stop ends the task immediately. Hands-off leaves a one-sentence summary.
 
 PRIVATE BY DESIGN
 Errand has no servers, analytics or telemetry. Settings, keys and chat history stay on your device. Page content is sent only to the model provider you choose, and with a local model it never leaves your computer.
@@ -67,7 +69,7 @@ Note: while a task runs, Chrome shows a "started debugging this browser" bar. Th
 | Permission | Justification |
 |---|---|
 | `debugger` | Errand uses the Chrome DevTools Protocol to send trusted mouse and keyboard input (Input.dispatchMouseEvent / dispatchKeyEvent) and to capture screenshots of the page (Page.captureScreenshot), so the agent can click, type and see pages the way a person does. Many sites ignore synthetic DOM events, so ordinary content-script events are not enough. It attaches only to tabs in Errand's own tab group, only while a user-started task is running, and Chrome shows its "started debugging this browser" bar the whole time. |
-| Host permission `<all_urls>` and the content script | The user decides which sites a task needs, so the agent must be able to work on any site. The content script reads the page's structure (a compact snapshot of interactive elements and text) and draws the cursor and highlights. It is passive until the agent works in that tab, and the user must approve each new site in the side panel before Errand acts on it. The host permission also lets Errand call the model endpoint the user configures, which can be any URL, including localhost. |
+| Host permission `<all_urls>` and the content script | The user decides which sites a task needs, so the agent must be able to work on any site. The content script reads the page's structure (a compact snapshot of interactive elements and text) and draws the cursor and highlights. It is passive until the agent works in that tab. Ask and Auto require approval before Errand acts on a new site. Hands-off may open a new site for the current task only, and that allow is not saved. The host permission also lets Errand call the model endpoint the user configures, which can be any URL, including localhost. |
 | `scripting` | Re-injects Errand's own bundled content script into a tab that was open before Errand was installed or updated, so the agent can work in it without the user reloading the page. No remote or dynamically generated code is injected. |
 | `tabs` | Finds the user's current tab to start a task, follows tabs the agent opens (e.g. links that open in a new tab), switches between them, and reads their URLs and titles to show the agent which tabs it is working in. |
 | `tabGroups` | Puts the tabs the agent controls into a labelled "Errand" tab group, so the user can always see which tabs the agent can touch. |
@@ -109,6 +111,6 @@ Paste this into the dashboard's **Test instructions** field and fill in a real k
 4. Click "Test connection", then type or pick the model: openai/gpt-4o-mini
 5. Click Save, then go back to any web page (e.g. https://en.wikipedia.org/wiki/Special:Random).
 6. Note that opening the side panel puts the current tab into an "Errand" tab group. In the side panel, type: "Summarise this page in three bullet points" and press Send.
-7. Approve the site when asked. Errand reads the page and replies. Chrome shows its debugging bar while the task runs; this is expected.
+7. Each task starts in Ask. Approve the site when asked. Errand reads the page and replies. Chrome shows its debugging bar while the task runs; this is expected. Auto and Hands-off, above the message box, apply to that task only and are not saved. Passwords, payment fields, and one-time codes still ask in every mode, including keys and paste (Tab, Escape, and arrows do not). Enter also asks when the label contains a risky word, including a text field such as Send a message, and so does a Submit button (submit and payment are risky words). Clicking or typing in a text field without Enter does not, and Enter in a plain search box does not unless it is inside a form. A card field inside a frame still asks.
 8. Try a task with a risky action (e.g. on a search page, "search for 'chrome extensions' and click the first result") to see the approval prompts. Press Stop at any time to end a task.
 ```
