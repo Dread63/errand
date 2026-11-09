@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { validateCall } from '@/lib/agent/tools';
 import { classifyRisk, isSensitiveField } from '@/lib/policy/risky';
 import { DEFAULT_RISKY_KEYWORDS } from '@/lib/storage/settings';
 import type { ActionTarget, ElementInfo, ToolCall } from '@/lib/types';
@@ -81,5 +82,34 @@ describe('classifyRisk', () => {
   });
   it('uses the configured keyword list', () => {
     expect(classifyRisk(call('click'), target(el({ name: 'Archive' })), ['archive']).risky).toBe(true);
+  });
+
+  it('treats type as a click when it targets a pay or submit control, and Enter outside a form', () => {
+    const checked = (name: string, args: Record<string, unknown>, element: ElementInfo, vision = false) =>
+      classifyRisk(validateCall({ id: 'c', name, args }, vision), target(element), DEFAULT_RISKY_KEYWORDS);
+    const pay = el({ name: 'Pay now', inForm: false, isSubmit: false });
+    const order = el({ name: 'Place order', inForm: false, isSubmit: false });
+    const submit = el({ name: 'Continue', inForm: true, isSubmit: true });
+    expect(checked('type', { id: 1, text: 'x' }, pay)).toMatchObject({ risky: true, hard: true });
+    expect(checked('type', { x: 4, y: 5, text: 'x' }, pay, true).hard).toBe(true);
+    expect(checked('type', { id: 1, text: 'x' }, submit)).toMatchObject({ risky: true, hard: true, reasons: ['Typing activates a submit button'] });
+    expect(checked('type', { text: 'x', submit: true }, pay).hard).toBe(true);
+    expect(checked('type', { text: 'a\nb' }, order).reasons).toContain('Label contains "order"');
+    expect(checked('type', { text: 'a\nb' }, order).hard).toBe(true);
+    expect(checked('key', { combo: 'NumpadEnter' }, pay).hard).toBe(true);
+    // Typing plain text into a focused button does not click it.
+    expect(checked('type', { text: 'hello' }, pay).hard).toBe(false);
+    // A newline in a spreadsheet cell is not a form submit.
+    expect(checked('type', { text: 'hi\n' }, el({ tag: 'textarea', role: 'textbox', name: '', inForm: false })).risky).toBe(false);
+    expect(checked('type', { id: 1, text: 'x' }, el({ tag: 'a', role: 'link', name: 'Get', download: true }))).toMatchObject({ risky: true, hard: false });
+  });
+
+  it('hard-gates clicks, typing, and keys on a frame the page cannot read', () => {
+    const frame = el({ tag: 'iframe', role: 'generic', name: 'Secure payment input frame' });
+    expect(risk(call('type', { text: '4242' }), frame)).toMatchObject({ hard: true, reasons: ['Interacting with a frame the page cannot read'] });
+    expect(risk(call('click'), frame).hard).toBe(true);
+    expect(risk(call('key', { combo: 'Enter' }), frame).hard).toBe(true);
+    expect(risk(call('scroll', { direction: 'down' }), frame).risky).toBe(false);
+    expect(risk(call('hover'), frame).risky).toBe(false);
   });
 });

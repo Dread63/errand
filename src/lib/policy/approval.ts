@@ -10,8 +10,8 @@ export const APPROVAL_MODE_LABEL: Record<ApprovalMode, string> = {
 
 export const APPROVAL_MODE_HINT: Record<ApprovalMode, string> = {
   ask: 'Ask before risky actions. This choice applies only to the task you send.',
-  auto: 'Skip routine actions such as downloads for this task. Passwords, payments, and form submits still ask.',
-  'hands-off': 'Also open new sites for this task only. Passwords, payments, and form submits still ask. The task ends with one sentence.',
+  auto: 'Skip routine actions such as downloads for this task. Passwords, payments, form submits, and payment frames still ask.',
+  'hands-off': 'Also open new sites for this task only. Passwords, payments, form submits, and payment frames still ask. The task ends with one sentence.',
 };
 
 /** Missing or unrecognized values stay on Ask. */

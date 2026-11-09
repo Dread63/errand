@@ -21,34 +21,46 @@ function matchKeyword(label: string, keywords: string[]): string | null {
 }
 
 const lastKey = (combo: unknown) => String(combo).split('+').pop()?.trim().toLowerCase();
-const isEnter = (combo: unknown) => ['enter', 'return'].includes(lastKey(combo) ?? '');
+const isEnter = (combo: unknown) => ['enter', 'return', 'numpadenter'].includes(lastKey(combo) ?? '');
 const isSpace = (combo: unknown) => lastKey(combo) === 'space';
+
+/** A frame we could not read inside. Same-origin frames are opened and described as their contents. */
+function isOpaqueFrame(e: ElementInfo): boolean {
+  return e.tag === 'iframe' || e.tag === 'frame';
+}
+
+function submitReason(call: ToolCall, pressesEnter: boolean): string {
+  if (call.name === 'click') return 'Clicking a submit button';
+  if (call.name === 'type' && call.args.submit !== true && !/[\r\n]/.test(String(call.args.text ?? ''))) return 'Typing activates a submit button';
+  return pressesEnter || call.name === 'type' ? 'Pressing Enter on a submit button' : 'Pressing Space on a submit button';
+}
 
 export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: string[]): { risky: boolean; reasons: string[]; hard: boolean } {
   const reasons: string[] = [];
-  /** A mode or task grant never skips these: credentials, payment, keyword labels, and any form submit. */
+  /** A mode or task grant never skips these: credentials, payment, keyword labels, form submits, and unread frames. */
   let hard = false;
   const e = target.element;
   if (e) {
-    const typesEnter = call.args.submit === true || /[\r\n]/.test(String(call.args.text ?? ''));
+    const text = String(call.args.text ?? '');
+    // type clicks its target first whenever it has an id or coordinates (ChromeDriver.act).
+    const typeClicks = call.name === 'type' && (call.args.id !== undefined || call.args.x !== undefined);
+    const typesEnter = call.name === 'type' && (call.args.submit === true || /[\r\n]/.test(text));
     const pressesEnter = call.name === 'key' && isEnter(call.args.combo);
     const pressesSpace = call.name === 'key' && isSpace(call.args.combo);
-    const activates = call.name === 'click' || pressesEnter || pressesSpace;
+    const sendsEnter = pressesEnter || typesEnter;
+    // Click, the click type performs first, Enter, or Space. Enter counts even outside a form.
+    const activates = call.name === 'click' || typeClicks || sendsEnter || pressesSpace;
     if (call.name === 'type' && isSensitiveField(e)) {
       reasons.push('Typing into a password, payment or one-time-code field');
       hard = true;
     }
-    // Enter inside a form submits it, including from an ordinary field such as an address.
-    if (call.name === 'type' && typesEnter && e.inForm) {
-      reasons.push('Pressing Enter inside a form');
-      hard = true;
-    }
-    if (pressesEnter && e.inForm) {
-      reasons.push('Pressing Enter inside a form');
-      hard = true;
-    }
-    if (pressesEnter && isSensitiveField(e)) {
+    if (sendsEnter && isSensitiveField(e)) {
       reasons.push('Pressing Enter in a password, payment or one-time-code field');
+      hard = true;
+    }
+    // Enter inside a form submits it, including from an ordinary field such as an address.
+    if (sendsEnter && e.inForm) {
+      reasons.push('Pressing Enter inside a form');
       hard = true;
     }
     if (activates) {
@@ -58,12 +70,15 @@ export function classifyRisk(call: ToolCall, target: ActionTarget, keywords: str
         hard = true;
       }
     }
-    // Click, Enter, and Space all activate a focused submit button.
     if (activates && e.isSubmit) {
-      reasons.push(call.name === 'click' ? 'Clicking a submit button' : pressesEnter ? 'Pressing Enter on a submit button' : 'Pressing Space on a submit button');
+      reasons.push(submitReason(call, pressesEnter));
       hard = true;
     }
-    if (call.name === 'click') {
+    if (isOpaqueFrame(e) && (call.name === 'click' || call.name === 'type' || call.name === 'key')) {
+      reasons.push('Interacting with a frame the page cannot read');
+      hard = true;
+    }
+    if (call.name === 'click' || typeClicks) {
       if (e.download || (e.href && FILE_EXT.test(e.href))) reasons.push('May download a file');
       if (e.type === 'file') reasons.push('Opens a file upload');
     }
