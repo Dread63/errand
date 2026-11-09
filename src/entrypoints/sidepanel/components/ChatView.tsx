@@ -38,7 +38,7 @@ export function ChatView({ turns, streaming, reasoning, running, connected }: Pr
           <div className="empty">
             <Logo size={48} />
             <h2>What should I do in this tab?</h2>
-            <p>Each task starts in Ask. Auto and Hands-off apply only to the task you send. Passwords, payments, and submitting a form always need approval.</p>
+            <p>Each task starts in Ask. Auto and Hands-off apply only to the task you send. Passwords, payments, submitting a form, and payment frames always need approval.</p>
           </div>
         ) : (
           <div className="empty">

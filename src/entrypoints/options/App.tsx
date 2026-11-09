@@ -278,7 +278,7 @@ function GeneralSection() {
     <section>
       <h2>General</h2>
       <p className="muted">
-        Each task starts in Ask. Choose Auto or Hands-off in the side panel before you send; that choice is not saved and cannot be changed while the task is running. Passwords, payments, and submitting a form always ask.
+        Each task starts in Ask. Choose Auto or Hands-off in the side panel before you send; that choice is not saved and cannot be changed while the task is running. Passwords, payments, submitting a form, and payment frames always ask.
       </p>
       <div className="field">
         <span>Theme</span>
